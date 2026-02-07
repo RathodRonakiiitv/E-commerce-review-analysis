@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  # FastAPI Backend
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONIOENCODING=utf-8
+      - DATABASE_URL=sqlite:///./reviews.db
+      - CORS_ORIGINS=http://localhost:3001,http://localhost:3000,http://localhost:5173
+    volumes:
+      - ./backend:/app
+      - backend_data:/app/reviews.db
+    restart: unless-stopped
+
+  # React Frontend
+  frontend:
+    build: ./frontend
+    ports:
+      - "3001:3001"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  backend_data:
