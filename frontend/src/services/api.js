@@ -58,6 +58,43 @@ export const exportPDF = (productId) =>
 export const exportCSV = (productId) =>
     api.get(`/products/${productId}/export/csv`, { responseType: 'blob' });
 
+// Aggregated Analysis (Frontend Helper)
+export const getProductAnalysis = async (productId) => {
+    try {
+        const [productRes, insightsRes, aiRes] = await Promise.allSettled([
+            api.get(`/products/${productId}`),
+            api.get(`/products/${productId}/insights`),
+            api.get(`/ai/products/${productId}/ai-summary`)
+        ]);
+
+        // Handle core data failure
+        if (productRes.status === 'rejected') throw productRes.reason;
+        if (insightsRes.status === 'rejected') throw insightsRes.reason;
+
+        const product = productRes.value.data;
+        const insights = insightsRes.value.data;
+        const aiAnalysis = aiRes.status === 'fulfilled' ? aiRes.value.data : null;
+
+        return {
+            data: {
+                product_name: product.name,
+                total_reviews: insights.total_reviews,
+                fake_reviews_detected: insights.fake_review_count,
+                sentiment_summary: {
+                    positive: insights.sentiment_distribution.positive,
+                    neutral: insights.sentiment_distribution.neutral,
+                    negative: insights.sentiment_distribution.negative
+                },
+                ai_analysis: aiAnalysis,
+                ...insights // Fallback for other fields
+            }
+        };
+    } catch (error) {
+        console.error("Error fetching product analysis:", error);
+        throw error;
+    }
+};
+
 // Health
 export const getHealth = () => api.get('/health');
 export const getStats = () => api.get('/stats');

@@ -1,119 +1,132 @@
+import { Brain, Sparkles, AlertTriangle, Lightbulb, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react';
 import { useState } from 'react';
-import { Sparkles, Loader2, MessageSquare, ChevronDown, ChevronUp } from 'lucide-react';
-import { getAISummary, getAspectDeepDive, suggestReviewResponse } from '../services/api';
+import { motion, AnimatePresence } from 'framer-motion';
 
-function AIInsights({ productId, productName }) {
-    const [loading, setLoading] = useState(false);
-    const [summary, setSummary] = useState(null);
-    const [error, setError] = useState('');
-    const [expanded, setExpanded] = useState(true);
+function AIInsights({ analysis }) {
+    if (!analysis) return null;
 
-    const generateSummary = async () => {
-        setLoading(true);
-        setError('');
-
-        try {
-            const { data } = await getAISummary(productId);
-            if (data.error) {
-                setError(data.error);
-            } else {
-                setSummary(data.summary);
-            }
-        } catch (err) {
-            setError(err.response?.data?.detail || 'Failed to generate AI summary');
-        } finally {
-            setLoading(false);
+    const sections = [
+        {
+            id: 'summary',
+            title: 'Executive Summary',
+            icon: Brain,
+            color: 'text-primary-400',
+            bg: 'bg-primary-500/10',
+            border: 'border-primary-500/20',
+            content: analysis.summary
+        },
+        {
+            id: 'pros',
+            title: 'Key Strengths',
+            icon: CheckCircle2,
+            color: 'text-emerald-400',
+            bg: 'bg-emerald-500/10',
+            border: 'border-emerald-500/20',
+            content: analysis.pros
+        },
+        {
+            id: 'cons',
+            title: 'Critical Issues',
+            icon: AlertTriangle,
+            color: 'text-rose-400',
+            bg: 'bg-rose-500/10',
+            border: 'border-rose-500/20',
+            content: analysis.cons
+        },
+        {
+            id: 'recommendation',
+            title: 'Buying Recommendation',
+            icon: Lightbulb,
+            color: 'text-amber-400',
+            bg: 'bg-amber-500/10',
+            border: 'border-amber-500/20',
+            content: analysis.recommendation
         }
-    };
+    ];
 
     return (
-        <div className="glass-card p-6">
-            <div
-                className="flex items-center justify-between cursor-pointer"
-                onClick={() => setExpanded(!expanded)}
-            >
-                <h3 className="text-lg font-semibold flex items-center gap-2">
-                    <Sparkles className="w-5 h-5 text-accent-400" style={{ color: '#d946ef' }} />
-                    AI-Powered Insights
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-accent-500/20 text-accent-400" style={{ backgroundColor: 'rgba(217, 70, 239, 0.2)', color: '#e879f9' }}>
-                        Groq
-                    </span>
-                </h3>
-                {expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+        <div className="space-y-6">
+            <div className="flex items-center gap-3 mb-8">
+                <div className="p-3 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg shadow-indigo-500/20">
+                    <Sparkles className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                    <h2 className="text-2xl font-bold text-white">AI Assistant Report</h2>
+                    <p className="text-white/50 text-sm">Powered by Groq Llama-3 70B</p>
+                </div>
             </div>
 
-            {expanded && (
-                <div className="mt-4 space-y-4">
-                    {!summary && !loading && (
-                        <div className="text-center py-6">
-                            <Sparkles className="w-12 h-12 mx-auto mb-3" style={{ color: 'rgba(255,255,255,0.3)' }} />
-                            <p className="text-white/60 mb-4">
-                                Get AI-powered analysis with executive summary, key strengths, weaknesses, and recommendations.
-                            </p>
-                            <button
-                                onClick={generateSummary}
-                                className="btn-primary inline-flex items-center gap-2"
-                            >
-                                <Sparkles className="w-5 h-5" />
-                                Generate AI Summary
-                            </button>
-                        </div>
-                    )}
+            <div className="grid gap-6">
+                {sections.map((section, index) => (
+                    <InsightCard key={section.id} section={section} index={index} />
+                ))}
+            </div>
+        </div>
+    );
+}
 
-                    {loading && (
-                        <div className="text-center py-8">
-                            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3" style={{ color: '#d946ef' }} />
-                            <p className="text-white/60">Analyzing reviews with Llama 3.1...</p>
-                        </div>
-                    )}
+function InsightCard({ section, index }) {
+    const [isExpanded, setIsExpanded] = useState(true);
 
-                    {error && (
-                        <div className="bg-rose-500/10 border border-rose-500/30 rounded-lg p-4 text-rose-400">
-                            <p className="font-medium">Error</p>
-                            <p className="text-sm">{error}</p>
-                            {error.includes('API key') && (
-                                <p className="text-xs mt-2 text-white/50">
-                                    Add your Groq API key to backend/.env as GROQ_API_KEY
+    return (
+        <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: index * 0.1 }}
+            className={`glass-card overflow-hidden transition-all duration-300 ${isExpanded ? 'ring-1 ring-white/10' : 'hover:bg-white/5'
+                }`}
+        >
+            <button
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="w-full flex items-center justify-between p-6 text-left"
+            >
+                <div className="flex items-center gap-4">
+                    <div className={`p-2.5 rounded-lg ${section.bg} ${section.color} border ${section.border}`}>
+                        <section.icon className="w-5 h-5" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-white/90">{section.title}</h3>
+                </div>
+                <div className={`p-1 rounded-full transition-colors ${isExpanded ? 'bg-white/10 text-white' : 'text-white/40 hover:bg-white/5'
+                    }`}>
+                    {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                </div>
+            </button>
+
+            <AnimatePresence>
+                {isExpanded && (
+                    <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.3, ease: 'easeInOut' }}
+                    >
+                        <div className="px-6 pb-6 pt-0">
+                            <div className="h-px w-full bg-white/5 mb-6" />
+                            {Array.isArray(section.content) ? (
+                                <ul className="space-y-3">
+                                    {section.content.map((item, i) => (
+                                        <motion.li
+                                            key={i}
+                                            initial={{ opacity: 0, x: -10 }}
+                                            animate={{ opacity: 1, x: 0 }}
+                                            transition={{ delay: 0.1 + (i * 0.05) }}
+                                            className="flex items-start gap-3 text-white/70 leading-relaxed"
+                                        >
+                                            <span className={`mt-2 w-1.5 h-1.5 rounded-full shrink-0 ${section.bg.replace('/10', '')}`} />
+                                            <span>{item}</span>
+                                        </motion.li>
+                                    ))}
+                                </ul>
+                            ) : (
+                                <p className="text-white/70 leading-relaxed whitespace-pre-line">
+                                    {section.content}
                                 </p>
                             )}
                         </div>
-                    )}
-
-                    {summary && (
-                        <div className="space-y-4">
-                            <div
-                                className="prose prose-invert max-w-none text-white/80"
-                                style={{ lineHeight: '1.7' }}
-                            >
-                                {summary.split('\n').map((line, i) => {
-                                    if (line.startsWith('**') && line.endsWith('**')) {
-                                        return <h4 key={i} className="text-white font-semibold mt-4 mb-2">{line.replace(/\*\*/g, '')}</h4>;
-                                    }
-                                    if (line.startsWith('- ')) {
-                                        return <p key={i} className="ml-4 flex items-start gap-2">
-                                            <span className="text-accent-400" style={{ color: '#e879f9' }}>•</span>
-                                            {line.substring(2)}
-                                        </p>;
-                                    }
-                                    if (line.trim()) {
-                                        return <p key={i} className="mb-2">{line}</p>;
-                                    }
-                                    return null;
-                                })}
-                            </div>
-
-                            <button
-                                onClick={generateSummary}
-                                className="btn-secondary text-sm flex items-center gap-2"
-                            >
-                                <Sparkles className="w-4 h-4" />
-                                Regenerate
-                            </button>
-                        </div>
-                    )}
-                </div>
-            )}
-        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </motion.div>
     );
 }
 
