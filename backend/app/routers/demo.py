@@ -40,6 +40,11 @@ async def create_demo_product(background_tasks: BackgroundTasks, db: Session = D
     db.add_all(reviews)
     db.commit()
     
+    # Update product stats
+    product.total_reviews = len(reviews)
+    product.avg_rating = sum(r.rating for r in reviews) / len(reviews)
+    db.commit()
+    
     # Trigger analysis in background
     background_tasks.add_task(run_complete_analysis, product.id)
     

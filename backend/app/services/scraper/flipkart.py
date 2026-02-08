@@ -11,8 +11,6 @@ from bs4 import BeautifulSoup
 
 from app.config import get_settings
 
-settings = get_settings()
-
 
 class FlipkartScraper:
     """Scraper for Flipkart product reviews."""
@@ -222,6 +220,15 @@ class FlipkartScraper:
                 print("Could not find product from search URL")
                 return []
         
+        # Initial visit to product page to set cookies/session
+        try:
+            print(f"Visiting product page to initialize session: {product_url}")
+            self.session.headers.update(self._get_headers())
+            await asyncio.to_thread(self.session.get, product_url, timeout=20)
+            await asyncio.sleep(random.uniform(1.0, 2.0))
+        except Exception as e:
+            print(f"Error visiting product page: {e}")
+
         while len(reviews) < max_reviews and consecutive_empty < 3 and consecutive_errors < 5:
             if page > max_pages:
                 print(f"Reached max page limit ({max_pages}). Stopping.")
@@ -233,7 +240,9 @@ class FlipkartScraper:
                 print(f"  Page {page} (delay {delay:.1f}s)...")
                 await asyncio.sleep(delay)
                 
-                response = self.session.get(url, headers=self._get_headers(), timeout=20)
+                response = await asyncio.to_thread(
+                    self.session.get, url, headers=self._get_headers(), timeout=20
+                )
                 
                 if response.status_code != 200:
                     print(f"  Got status {response.status_code} on page {page}")
@@ -285,7 +294,9 @@ class FlipkartScraper:
         """Find the first product URL from a Flipkart search page."""
         print(f"Searching: {search_url}")
         try:
-            response = self.session.get(search_url, headers=self._get_headers(), timeout=15)
+            response = await asyncio.to_thread(
+                self.session.get, search_url, headers=self._get_headers(), timeout=15
+            )
             soup = BeautifulSoup(response.content, 'html.parser')
             
             all_links = soup.find_all('a', href=True)

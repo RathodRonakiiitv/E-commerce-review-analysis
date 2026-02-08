@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Sparkles, BarChart3, Shield, TrendingUp, Loader2, AlertCircle, ArrowRight } from 'lucide-react';
 import { startScraping, getScrapeStatus } from '../services/api';
@@ -12,6 +12,14 @@ function Home() {
     const [progress, setProgress] = useState(0);
     const [statusMessage, setStatusMessage] = useState('');
     const navigate = useNavigate();
+    const pollRef = useRef(null);
+
+    // Cleanup polling on unmount
+    useEffect(() => {
+        return () => {
+            if (pollRef.current) clearInterval(pollRef.current);
+        };
+    }, []);
 
     const features = [
         {
@@ -76,19 +84,28 @@ function Home() {
 
                     if (status.status === 'completed') {
                         clearInterval(pollInterval);
+                        pollRef.current = null;
                         setLoading(false);
-                        navigate(`/products/${status.product_id}`);
+
+                        if (status.product_id) {
+                            navigate(`/products/${status.product_id}`);
+                        } else {
+                            setError('Analysis completed but no product data returned. The scraper may have been blocked or found no reviews.');
+                        }
                     } else if (status.status === 'failed') {
                         clearInterval(pollInterval);
+                        pollRef.current = null;
                         setLoading(false);
                         setError(status.error || 'Analysis failed. Please try again.');
                     }
                 } catch (err) {
                     clearInterval(pollInterval);
+                    pollRef.current = null;
                     setLoading(false);
                     setError('Connection lost. Retrying...');
                 }
             }, 2000);
+            pollRef.current = pollInterval;
 
         } catch (err) {
             setLoading(false);
@@ -118,7 +135,7 @@ function Home() {
                 >
                     <span className="text-white drop-shadow-2xl">Decode Customer</span>
                     <br />
-                    <span className="text-gradient-primary">Sentiment Instantly</span>
+                    <span className="text-gradient">Sentiment Instantly</span>
                 </motion.h1>
 
                 <motion.p
@@ -243,7 +260,7 @@ function Home() {
 
             {/* How It Works */}
             <section className="relative py-20 overflow-hidden">
-                <div className="absolute inset-0 bg-white/2 skew-y-3 transform origin-top-left scale-110" />
+                <div className="absolute inset-0 bg-white/[2%] skew-y-3 transform origin-top-left scale-110" />
 
                 <div className="relative px-4 text-center space-y-16">
                     <motion.div

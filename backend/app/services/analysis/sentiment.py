@@ -1,7 +1,7 @@
 """Sentiment analysis service using HuggingFace Transformers."""
+import asyncio
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
-from functools import lru_cache
 
 from sqlalchemy.orm import Session
 
@@ -129,7 +129,7 @@ async def analyze_product_sentiment(db: Session, product_id: int) -> Dict:
     texts = [r.review_text for r in reviews]
     
     # Analyze all texts
-    sentiments = analyze_texts_batch(texts)
+    sentiments = await asyncio.to_thread(analyze_texts_batch, texts)
     
     # Update reviews with sentiment
     positive_count = 0

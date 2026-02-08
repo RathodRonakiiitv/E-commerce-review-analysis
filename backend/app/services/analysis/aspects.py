@@ -1,4 +1,5 @@
 """Aspect-based sentiment analysis service."""
+import asyncio
 import re
 from datetime import datetime
 from typing import Dict, List
@@ -111,7 +112,7 @@ async def analyze_product_aspects(db: Session, product_id: int) -> Dict:
             
             for sentence in matching_sentences:
                 # Analyze sentiment of the specific sentence
-                label, score = analyze_text(sentence)
+                label, score = await asyncio.to_thread(analyze_text, sentence)
                 
                 # Store aspect in database
                 aspect_record = ReviewAspect(

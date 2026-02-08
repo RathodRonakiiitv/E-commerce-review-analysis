@@ -1,15 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Star, ThumbsUp, ThumbsDown, Minus, MessageSquare, BarChart3, ShieldCheck, Download, Share2, AlertTriangle, CheckCircle2 } from 'lucide-react';
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from 'recharts';
+import { ArrowLeft, Star, MessageSquare, BarChart3, ShieldCheck, Download, Share2, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, ResponsiveContainer } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getProductAnalysis } from '../services/api';
+import { getProductAnalysis, exportPDF } from '../services/api';
 import AIInsights from '../components/AIInsights';
 
 const COLORS = ['#10b981', '#f59e0b', '#ef4444']; // Emerald, Amber, Rose
 
 function ProductAnalysis() {
-    const { id } = useParams();
+    const { productId: id } = useParams();
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -69,12 +69,12 @@ function ProductAnalysis() {
     const tabs = [
         { id: 'overview', label: 'Overview', icon: BarChart3 },
         { id: 'insights', label: 'AI Intelligence', icon: MessageSquare },
-        { id: 'aspects', label: 'Detailed Aspects', icon: PieChart },
+        { id: 'aspects', label: 'Detailed Aspects', icon: BarChart3 },
         { id: 'credibility', label: 'Review Credibility', icon: ShieldCheck },
     ];
 
     return (
-        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="space-y-8 duration-500">
             {/* Header */}
             <header className="glass-card p-6 md:p-8 relative overflow-hidden group">
                 <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/10 blur-[100px] pointer-events-none" />
@@ -93,22 +93,36 @@ function ProductAnalysis() {
                             <div className="flex flex-wrap items-center gap-4 text-sm text-white/60">
                                 <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/5 border border-white/5">
                                     <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
-                                    <span className="text-white font-semibold">4.5</span>
+                                    <span className="text-white font-semibold">{data.avg_rating?.toFixed(1) || 'N/A'}</span>
                                 </span>
                                 <span className="flex items-center gap-1.5">
                                     <MessageSquare className="w-4 h-4" />
                                     {data.total_reviews} reviews analyzed
                                 </span>
                                 <span className="w-1 h-1 rounded-full bg-white/20" />
-                                <span className="text-primary-400">Amazon.in</span>
+                                <span className="text-primary-400">{data.platform || 'E-commerce'}</span>
                             </div>
                         </div>
 
                         <div className="flex items-center gap-3">
-                            <button className="btn-secondary p-2.5 rounded-lg" title="Export Report">
+                            <button onClick={async () => {
+                                try {
+                                    const response = await exportPDF(id);
+                                    const url = window.URL.createObjectURL(new Blob([response.data]));
+                                    const link = document.createElement('a');
+                                    link.href = url;
+                                    link.setAttribute('download', `analysis-${id}.pdf`);
+                                    document.body.appendChild(link);
+                                    link.click();
+                                    link.remove();
+                                    window.URL.revokeObjectURL(url);
+                                } catch (e) {
+                                    console.error('PDF export failed:', e);
+                                }
+                            }} className="btn-primary p-2.5 rounded-lg" title="Export Report">
                                 <Download className="w-5 h-5" />
                             </button>
-                            <button className="btn-secondary p-2.5 rounded-lg" title="Share Analysis">
+                            <button className="btn-primary p-2.5 rounded-lg" title="Share Analysis">
                                 <Share2 className="w-5 h-5" />
                             </button>
                         </div>
@@ -117,7 +131,7 @@ function ProductAnalysis() {
             </header>
 
             {/* Tabs */}
-            <div className="flex overflow-x-auto pb-2 gap-2 scrollbar-none">
+            <div className="flex overflow-x-auto pb-2 gap-2">
                 {tabs.map(tab => (
                     <button
                         key={tab.id}
@@ -191,7 +205,7 @@ function ProductAnalysis() {
                                     <div className="text-3xl font-bold text-white mb-2">{data.fake_reviews_detected}</div>
                                     <div className="text-xs text-rose-400 flex items-center gap-1">
                                         <AlertTriangle className="w-3 h-3" />
-                                        {(data.fake_reviews_detected / data.total_reviews * 100).toFixed(1)}% suspicion rate
+                                        {data.total_reviews > 0 ? (data.fake_reviews_detected / data.total_reviews * 100).toFixed(1) : '0.0'}% suspicion rate
                                     </div>
                                 </div>
                             </div>
@@ -207,7 +221,7 @@ function ProductAnalysis() {
                     {/* Placeholders for other tabs for brevity in this refactor, can expand later */}
                     {activeTab === 'aspects' && (
                         <div className="glass-card p-8 text-center text-white/50">
-                            <PieChart className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                            <BarChart3 className="w-12 h-12 mx-auto mb-4 opacity-50" />
                             <p>Detailed aspect analysis visualizations coming soon.</p>
                         </div>
                     )}

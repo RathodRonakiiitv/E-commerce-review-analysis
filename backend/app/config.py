@@ -14,14 +14,11 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
     
     # Database
-    database_url: str = "postgresql://user:password@localhost:5432/reviewdb"
-    
-    # Redis
-    redis_url: str = "redis://localhost:6379/0"
+    database_url: str = "sqlite:///./reviews.db"
     
     # API
     api_secret_key: str = "dev-secret-key"
-    cors_origins: str = "http://localhost:3000,http://localhost:5173"
+    cors_origins: str = "http://localhost:3000,http://localhost:3001,http://localhost:5173"
     
     # Scraping
     request_timeout: int = 10

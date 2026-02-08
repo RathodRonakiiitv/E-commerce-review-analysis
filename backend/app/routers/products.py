@@ -65,7 +65,7 @@ async def get_product_reviews(
     product_id: int,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    sentiment: Optional[str] = Query(None, regex="^(positive|negative|neutral)$"),
+    sentiment: Optional[str] = Query(None, pattern="^(positive|negative|neutral)$"),
     rating: Optional[int] = Query(None, ge=1, le=5),
     verified_only: bool = Query(False),
     db: Session = Depends(get_db)
@@ -84,7 +84,7 @@ async def get_product_reviews(
     if rating:
         query = query.filter(Review.rating == rating)
     if verified_only:
-        query = query.filter(Review.verified_purchase == True)
+        query = query.filter(Review.verified_purchase.is_(True))
     
     total = query.count()
     total_pages = math.ceil(total / page_size) if total > 0 else 1

@@ -78,6 +78,8 @@ export const getProductAnalysis = async (productId) => {
         return {
             data: {
                 product_name: product.name,
+                platform: product.platform,
+                avg_rating: product.avg_rating,
                 total_reviews: insights.total_reviews,
                 fake_reviews_detected: insights.fake_review_count,
                 sentiment_summary: {

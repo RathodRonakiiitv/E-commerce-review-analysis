@@ -64,18 +64,18 @@ def generate_analysis_pdf(product, insights: Dict[str, Any]) -> io.BytesIO:
     if len(product_name) > 60:
         product_name = product_name[:57] + "..."
     
-    elements.append(Paragraph(f"📊 {product_name}", title_style))
+    elements.append(Paragraph(f"{product_name}", title_style))
     elements.append(Paragraph(f"Analysis Report - {datetime.now().strftime('%B %d, %Y')}", body_style))
     elements.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor('#e94560')))
     elements.append(Spacer(1, 20))
     
     # Overview Section
-    elements.append(Paragraph("📈 Overview", heading_style))
+    elements.append(Paragraph("Overview", heading_style))
     
     overview_data = [
         ["Overall Score", f"{insights['overall_score']:.1f} / 100"],
         ["Total Reviews", str(insights['total_reviews'])],
-        ["Average Rating", f"{insights['avg_rating']:.1f} ⭐"],
+        ["Average Rating", f"{insights['avg_rating']:.1f} / 5"],
         ["Suspicious Reviews", f"{insights['fake_review_count']} ({insights['fake_review_percent']:.1f}%)"],
     ]
     
@@ -94,7 +94,7 @@ def generate_analysis_pdf(product, insights: Dict[str, Any]) -> io.BytesIO:
     elements.append(Spacer(1, 15))
     
     # Rating Distribution
-    elements.append(Paragraph("⭐ Rating Distribution", heading_style))
+    elements.append(Paragraph("Rating Distribution", heading_style))
     
     rating_dist = insights['rating_distribution']
     rating_data = [["Rating", "Count", "Percentage"]]
@@ -102,7 +102,7 @@ def generate_analysis_pdf(product, insights: Dict[str, Any]) -> io.BytesIO:
     for stars in range(5, 0, -1):
         count = rating_dist.get(stars, 0)
         pct = (count / total * 100) if total > 0 else 0
-        rating_data.append([f"{stars} ⭐", str(count), f"{pct:.1f}%"])
+        rating_data.append([f"{stars} Stars", str(count), f"{pct:.1f}%"])
     
     rating_table = Table(rating_data, colWidths=[1.5*inch, 1.5*inch, 1.5*inch])
     rating_table.setStyle(TableStyle([
@@ -120,14 +120,14 @@ def generate_analysis_pdf(product, insights: Dict[str, Any]) -> io.BytesIO:
     elements.append(Spacer(1, 15))
     
     # Sentiment Distribution
-    elements.append(Paragraph("🎭 Sentiment Analysis", heading_style))
+    elements.append(Paragraph("Sentiment Analysis", heading_style))
     
     sent_dist = insights['sentiment_distribution']
     sentiment_data = [
         ["Sentiment", "Count", "Percentage"],
-        ["😊 Positive", str(sent_dist['positive']), f"{sent_dist['positive_percent']:.1f}%"],
-        ["😐 Neutral", str(sent_dist['neutral']), f"{sent_dist['neutral_percent']:.1f}%"],
-        ["😞 Negative", str(sent_dist['negative']), f"{sent_dist['negative_percent']:.1f}%"],
+        ["Positive", str(sent_dist['positive']), f"{sent_dist['positive_percent']:.1f}%"],
+        ["Neutral", str(sent_dist['neutral']), f"{sent_dist['neutral_percent']:.1f}%"],
+        ["Negative", str(sent_dist['negative']), f"{sent_dist['negative_percent']:.1f}%"],
     ]
     
     sent_table = Table(sentiment_data, colWidths=[1.5*inch, 1.5*inch, 1.5*inch])
@@ -148,7 +148,7 @@ def generate_analysis_pdf(product, insights: Dict[str, Any]) -> io.BytesIO:
     elements.append(Spacer(1, 15))
     
     # Common Keywords
-    elements.append(Paragraph("🔑 Key Findings", heading_style))
+    elements.append(Paragraph("Key Findings", heading_style))
     
     praises = insights.get('common_praises', [])[:5]
     complaints = insights.get('common_complaints', [])[:5]
@@ -162,21 +162,21 @@ def generate_analysis_pdf(product, insights: Dict[str, Any]) -> io.BytesIO:
     
     # Top Reviews
     if insights.get('top_positive_reviews'):
-        elements.append(Paragraph("👍 Top Positive Reviews", heading_style))
+        elements.append(Paragraph("Top Positive Reviews", heading_style))
         for i, review in enumerate(insights['top_positive_reviews'][:3], 1):
             text = review['text'].replace('\n', ' ')
             if len(text) > 200:
                 text = text[:197] + "..."
-            elements.append(Paragraph(f"{i}. ⭐{review['rating']} - \"{text}\"", body_style))
+            elements.append(Paragraph(f"{i}. Rating {review['rating']}/5 - \"{text}\"", body_style))
     
     if insights.get('top_negative_reviews'):
         elements.append(Spacer(1, 10))
-        elements.append(Paragraph("👎 Top Negative Reviews", heading_style))
+        elements.append(Paragraph("Top Negative Reviews", heading_style))
         for i, review in enumerate(insights['top_negative_reviews'][:3], 1):
             text = review['text'].replace('\n', ' ')
             if len(text) > 200:
                 text = text[:197] + "..."
-            elements.append(Paragraph(f"{i}. ⭐{review['rating']} - \"{text}\"", body_style))
+            elements.append(Paragraph(f"{i}. Rating {review['rating']}/5 - \"{text}\"", body_style))
     
     # Footer
     elements.append(Spacer(1, 30))

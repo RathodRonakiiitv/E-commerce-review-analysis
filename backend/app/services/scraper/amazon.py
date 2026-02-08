@@ -9,18 +9,13 @@ from dateutil import parser as date_parser
 
 import requests
 from bs4 import BeautifulSoup
-from fake_useragent import UserAgent
-
 from app.config import get_settings
-
-settings = get_settings()
 
 
 class AmazonScraper:
     """Scraper for Amazon product reviews."""
     
     def __init__(self):
-        self.ua = UserAgent()
         self.session = requests.Session()
         self.product_name: Optional[str] = None
         
@@ -198,7 +193,8 @@ class AmazonScraper:
                 print(f"Scraping page {page} (delay {delay:.1f}s)...")
                 await asyncio.sleep(delay)
                 
-                response = self.session.get(
+                response = await asyncio.to_thread(
+                    self.session.get,
                     url,
                     headers=self._get_headers(),
                     timeout=15
@@ -248,12 +244,9 @@ class AmazonScraper:
                 # Find review divs
                 review_divs = soup.find_all('div', {'data-hook': 'review'})
                 
-                # DEBUG: Print what we found
-                print(f"DEBUG: Found {len(review_divs)} review divs")
                 if not review_divs:
                     # Check if we hit a different layout
                     alt_divs = soup.find_all('div', class_='a-section review aok-relative')
-                    print(f"DEBUG: Found {len(alt_divs)} alternative review divs")
                     if alt_divs:
                         review_divs = alt_divs
 
@@ -268,7 +261,7 @@ class AmazonScraper:
                             print(f"Scraping fallback: {fallback_url}")
                             try:
                                 await asyncio.sleep(random.uniform(2, 5))
-                                response = self.session.get(fallback_url, headers=self._get_headers(), timeout=15)
+                                response = await asyncio.to_thread(self.session.get, fallback_url, headers=self._get_headers(), timeout=15)
                                 if response.status_code == 200:
                                     soup_fb = BeautifulSoup(response.content, 'html.parser')
                                     review_divs = soup_fb.find_all('div', {'data-hook': 'review'})

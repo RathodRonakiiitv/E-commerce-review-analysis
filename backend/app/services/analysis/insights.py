@@ -4,7 +4,6 @@ from typing import Dict
 from collections import Counter
 
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 
 from app.models import Product, Review
 

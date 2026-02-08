@@ -128,7 +128,7 @@ function CompareProducts() {
                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary-500 via-accent-500 to-primary-500" />
 
                 <form onSubmit={handleCompare} className="space-y-8">
-                    <div className="grid md:grid-cols-2 gap-8 items-center">
+                    <div className="grid md:grid-cols-[1fr_auto_1fr] gap-8 items-center">
                         <div className="space-y-4">
                             <label className="block text-sm font-medium text-white/80 uppercase tracking-wider">Product 1</label>
                             <div className="relative group">

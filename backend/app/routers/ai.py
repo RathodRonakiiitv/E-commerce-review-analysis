@@ -9,7 +9,7 @@ from app.models import Product, Review
 from app.services.ai.groq_service import groq_service
 
 
-router = APIRouter(prefix="/ai", tags=["AI Insights"])
+router = APIRouter(prefix="/ai")
 
 
 class AIInsightsResponse(BaseModel):

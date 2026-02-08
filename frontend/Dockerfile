@@ -15,4 +15,4 @@ COPY . .
 EXPOSE 3001
 
 # Run development server
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "3001"]
+CMD ["npx", "vite", "--host", "0.0.0.0", "--port", "3001"]
