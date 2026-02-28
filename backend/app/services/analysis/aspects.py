@@ -1,7 +1,7 @@
 """Aspect-based sentiment analysis service."""
 import asyncio
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List
 from collections import defaultdict
 
@@ -91,7 +91,7 @@ async def analyze_product_aspects(db: Session, product_id: int) -> Dict:
         return {
             "product_id": product_id,
             "aspects": [],
-            "analyzed_at": datetime.utcnow().isoformat()
+            "analyzed_at": datetime.now(timezone.utc).isoformat()
         }
     
     # Clear existing aspects
@@ -175,5 +175,5 @@ async def analyze_product_aspects(db: Session, product_id: int) -> Dict:
     return {
         "product_id": product_id,
         "aspects": aspects,
-        "analyzed_at": datetime.utcnow().isoformat()
+        "analyzed_at": datetime.now(timezone.utc).isoformat()
     }

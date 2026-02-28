@@ -1,19 +1,39 @@
 """FastAPI Application Entry Point."""
+import logging
 import sys
 import io
+import os
+import asyncio
 
-# Force UTF-8 encoding for stdout/stderr on Windows
+# Playwright needs ProactorEventLoop on Windows to spawn browser subprocesses.
+# Must be set BEFORE uvicorn creates its event loop.
 if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
+# Force UTF-8 encoding for stdout/stderr on Windows (skip during testing)
+if sys.platform == "win32" and "pytest" not in sys.modules:
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from app.config import get_settings
 from app.database import init_db
 from app.routers import products, scraping, analysis, comparison, export, ai, demo
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+# Rate limiter (default: 60 requests/minute per IP)
+limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
 
 
 settings = get_settings()
@@ -23,27 +43,27 @@ settings = get_settings()
 async def lifespan(app: FastAPI):
     """Application lifespan events."""
     # Startup
-    print("[START] Starting E-commerce Review Analyzer API...")
+    logger.info("Starting Flipkart Review Analyzer API...")
     init_db()
-    print("[OK] Database tables initialized")
+    logger.info("Database tables initialized")
     
     # Pre-load ML models (lazy loading on first use)
-    print("[OK] ML models will be loaded on first request")
-    print("[OK] Groq AI integration ready")
+    logger.info("ML models will be loaded on first request")
+    logger.info("Groq AI integration ready")
     
     yield
     
     # Shutdown
-    print("[STOP] Shutting down API...")
+    logger.info("Shutting down API...")
 
 
 app = FastAPI(
-    title="E-commerce Product Review Analyzer",
+    title="Flipkart Product Review Analyzer",
     description="""
-    Analyze product reviews from Amazon and Flipkart with AI-powered insights.
+    Analyze Flipkart product reviews with AI-powered insights.
     
     ## Features
-    - Scrape reviews from product URLs
+    - Scrape reviews from Flipkart product URLs
     - Sentiment Analysis - Positive/Negative/Neutral classification
     - Aspect-Based Sentiment - Quality, Price, Delivery, etc.
     - Topic Modeling - Discover what customers talk about
@@ -52,9 +72,13 @@ app = FastAPI(
     - Export - PDF and CSV reports
     - AI Insights - Groq-powered summaries and suggestions
     """,
-    version="1.0.0",
+    version="2.0.0",
     lifespan=lifespan
 )
+
+# Attach rate limiter
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS middleware
 app.add_middleware(
@@ -78,13 +102,14 @@ app.include_router(demo.router, prefix="/api", tags=["Demo"])
 @app.get("/api/health", tags=["Health"])
 async def health_check():
     """Check if API is running."""
-    return {"status": "healthy", "message": "E-commerce Review Analyzer API is running"}
+    return {"status": "healthy", "message": "Flipkart Review Analyzer API is running"}
 
 
 @app.get("/api/stats", tags=["Health"])
 async def get_stats():
     """Get system statistics."""
-    from app.database import SessionLocal
+    from fastapi import Depends
+    from app.database import SessionLocal, get_db
     from app.models import Product, Review
     
     db = SessionLocal()

@@ -1,26 +1,49 @@
 """Scraping endpoints for initiating and monitoring scrape jobs."""
+import asyncio
+import sys
 import uuid
-from datetime import datetime
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Request
 from typing import Dict
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from app.schemas.scraping import ScrapeRequest, ScrapeStatusResponse, JobStatus
 
 router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
+
+# Thread pool for running Playwright (needs ProactorEventLoop on Windows)
+_scrape_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="scraper")
 
 # In-memory job storage (in production, use Redis)
 scrape_jobs: Dict[str, dict] = {}
 
+# Maximum completed jobs to keep in memory
+_MAX_COMPLETED_JOBS = 200
+
+
+def _cleanup_old_jobs():
+    """Remove oldest completed/failed jobs when storage exceeds limit."""
+    finished = [
+        (k, v) for k, v in scrape_jobs.items()
+        if v["status"] in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED)
+    ]
+    if len(finished) > _MAX_COMPLETED_JOBS:
+        # Sort by completion time, remove oldest
+        finished.sort(key=lambda kv: kv[1].get("completed_at") or datetime.min)
+        for k, _ in finished[: len(finished) - _MAX_COMPLETED_JOBS]:
+            del scrape_jobs[k]
+
 
 def detect_platform(url: str) -> str:
-    """Detect e-commerce platform from URL."""
+    """Detect e-commerce platform from URL. Only Flipkart is supported."""
     url_lower = url.lower()
-    if "amazon" in url_lower:
-        return "amazon"
-    elif "flipkart" in url_lower:
+    if "flipkart" in url_lower:
         return "flipkart"
     else:
-        raise ValueError("Unsupported platform. Only Amazon and Flipkart are supported.")
+        raise ValueError("Unsupported platform. Only Flipkart product URLs are supported.")
 
 
 async def run_scrape_job(job_id: str, url: str, max_reviews: int):
@@ -29,26 +52,49 @@ async def run_scrape_job(job_id: str, url: str, max_reviews: int):
     
     try:
         scrape_jobs[job_id]["status"] = JobStatus.RUNNING
-        scrape_jobs[job_id]["started_at"] = datetime.utcnow()
+        scrape_jobs[job_id]["started_at"] = datetime.now(timezone.utc)
         
-        # Run the scraper
-        product_id, reviews_count = await scrape_product(
-            url=url,
-            max_reviews=max_reviews,
-            progress_callback=lambda p, c: update_job_progress(job_id, p, c)
+        # Playwright needs ProactorEventLoop for subprocess support on Windows.
+        # uvicorn's event loop doesn't support it, so we run the scraper
+        # in a dedicated thread with its own ProactorEventLoop.
+        def _scrape_in_thread():
+            if sys.platform == "win32":
+                loop = asyncio.ProactorEventLoop()
+            else:
+                loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(
+                    scrape_product(
+                        url=url,
+                        max_reviews=max_reviews,
+                        progress_callback=lambda p, c: update_job_progress(job_id, p, c),
+                    )
+                )
+            finally:
+                loop.close()
+
+        main_loop = asyncio.get_event_loop()
+        product_id, reviews_count = await main_loop.run_in_executor(
+            _scrape_pool, _scrape_in_thread
         )
         
-        scrape_jobs[job_id]["status"] = JobStatus.COMPLETED
-        scrape_jobs[job_id]["product_id"] = product_id
-        scrape_jobs[job_id]["reviews_scraped"] = reviews_count
-        scrape_jobs[job_id]["progress"] = 100
-        scrape_jobs[job_id]["completed_at"] = datetime.utcnow()
-        scrape_jobs[job_id]["message"] = f"Successfully scraped {reviews_count} reviews"
+        if reviews_count == 0:
+            scrape_jobs[job_id]["status"] = JobStatus.FAILED
+            scrape_jobs[job_id]["error"] = "Scraper collected 0 reviews. The product may have no reviews or Flipkart blocked the request. Try again."
+            scrape_jobs[job_id]["completed_at"] = datetime.now(timezone.utc)
+        else:
+            scrape_jobs[job_id]["status"] = JobStatus.COMPLETED
+            scrape_jobs[job_id]["product_id"] = product_id
+            scrape_jobs[job_id]["reviews_scraped"] = reviews_count
+            scrape_jobs[job_id]["progress"] = 100
+            scrape_jobs[job_id]["completed_at"] = datetime.now(timezone.utc)
+            scrape_jobs[job_id]["message"] = f"Successfully scraped {reviews_count} reviews"
         
     except Exception as e:
         scrape_jobs[job_id]["status"] = JobStatus.FAILED
         scrape_jobs[job_id]["error"] = str(e)
-        scrape_jobs[job_id]["completed_at"] = datetime.utcnow()
+        scrape_jobs[job_id]["completed_at"] = datetime.now(timezone.utc)
 
 
 def update_job_progress(job_id: str, progress: int, reviews_count: int):
@@ -59,13 +105,15 @@ def update_job_progress(job_id: str, progress: int, reviews_count: int):
 
 
 @router.post("", response_model=ScrapeStatusResponse)
+@limiter.limit("5/minute")
 async def start_scraping(
-    request: ScrapeRequest,
+    request: Request,
+    body: ScrapeRequest,
     background_tasks: BackgroundTasks
 ):
     """Start scraping a product from URL."""
     try:
-        platform = detect_platform(request.url)
+        platform = detect_platform(body.url)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     
@@ -83,8 +131,11 @@ async def start_scraping(
         "error": None
     }
     
+    # Cleanup old jobs to prevent memory leak
+    _cleanup_old_jobs()
+
     # Add background task
-    background_tasks.add_task(run_scrape_job, job_id, request.url, request.max_reviews)
+    background_tasks.add_task(run_scrape_job, job_id, body.url, body.max_reviews)
     
     return ScrapeStatusResponse(**scrape_jobs[job_id])
 
@@ -109,7 +160,7 @@ async def cancel_scrape(job_id: str):
         raise HTTPException(status_code=400, detail="Job already finished")
     
     job["status"] = JobStatus.CANCELLED
-    job["completed_at"] = datetime.utcnow()
+    job["completed_at"] = datetime.now(timezone.utc)
     job["message"] = "Job cancelled by user"
     
     return {"message": "Job cancelled"}

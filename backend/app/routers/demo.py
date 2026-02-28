@@ -3,11 +3,13 @@ from sqlalchemy.orm import Session
 from app.database import get_db, SessionLocal
 from app.models import Product, Review
 from app.services.analysis.runner import run_complete_analysis
+import logging
 import random
 from datetime import datetime
 import uuid
 from app.services.scraper.flipkart import FlipkartScraper
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 @router.post("/demo")
@@ -19,7 +21,6 @@ async def create_demo_product(background_tasks: BackgroundTasks, db: Session = D
     demo_id = str(uuid.uuid4())[:8]
     product = Product(
         name=f"Demo Headphones {demo_id}",
-        # description and price removed as they are not in Product model
         url=f"http://example.com/demo-headphones-{demo_id}",
         platform="Demo"
     )
@@ -72,8 +73,8 @@ async def create_oneplus_demo(background_tasks: BackgroundTasks, db: Session = D
 
     product = Product(
         name="OnePlus 13R (Charcoal, 8GB RAM, 128GB Storage)",
-        url=f"http://amazon.in/oneplus-13r-demo-{uuid.uuid4()}", # Unique URL
-        platform="Amazon"
+        url=f"https://www.flipkart.com/oneplus-13r-demo-{uuid.uuid4()}",
+        platform="Flipkart"
     )
     
     db.add(product)
@@ -169,10 +170,10 @@ async def create_oneplus_demo(background_tasks: BackgroundTasks, db: Session = D
 
 async def background_scrape_flipkart(product_id: int, url: str):
     """Background task to scrape Flipkart reviews."""
-    print(f"Starting background scrape for {product_id}...")
+    logger.info("Starting background scrape for %d...", product_id)
     scraper = FlipkartScraper()
     reviews = await scraper.scrape_reviews(url, max_reviews=50) # Get up to 50
-    print(f"Scraped {len(reviews)} reviews for {product_id}")
+    logger.info("Scraped %d reviews for %d", len(reviews), product_id)
     
     db = SessionLocal()
     try:
@@ -187,13 +188,13 @@ async def background_scrape_flipkart(product_id: int, url: str):
             )
             db.add(review)
         db.commit()
-        print(f"Saved {len(reviews)} reviews to DB")
+        logger.info("Saved %d reviews to DB", len(reviews))
         
         # Run Analysis
         await run_complete_analysis(product_id)
         
     except Exception as e:
-        print(f"Error in background task: {e}")
+        logger.error("Error in background task: %s", e)
     finally:
         db.close()
 
@@ -208,7 +209,7 @@ async def create_oneplus_flipkart_demo(background_tasks: BackgroundTasks, db: Se
     if not url:
         return {"error": "Could not find OnePlus 13R on Flipkart"}
     
-    print(f"Found Flipkart URL: {url}")
+    logger.info("Found Flipkart URL: %s", url)
 
     # Check for existing
     existing = db.query(Product).filter(Product.name.ilike("%OnePlus 13R%Flipkart%")).first()

@@ -1,18 +1,30 @@
-FROM node:20-alpine
+# ---- Build stage ----
+FROM node:20-alpine AS build
 
 WORKDIR /app
 
-# Copy package files
 COPY package.json package-lock.json* ./
+RUN npm ci
 
-# Install dependencies
-RUN npm install
-
-# Copy application files
 COPY . .
+RUN npm run build
 
-# Expose port
+# ---- Production stage ----
+FROM nginx:alpine
+
+# Copy built assets
+COPY --from=build /app/dist /usr/share/nginx/html
+
+# SPA fallback: redirect all routes to index.html
+RUN printf 'server {\n\
+    listen 3001;\n\
+    root /usr/share/nginx/html;\n\
+    index index.html;\n\
+    location / {\n\
+        try_files $uri $uri/ /index.html;\n\
+    }\n\
+}\n' > /etc/nginx/conf.d/default.conf
+
 EXPOSE 3001
 
-# Run development server
-CMD ["npx", "vite", "--host", "0.0.0.0", "--port", "3001"]
+CMD ["nginx", "-g", "daemon off;"]

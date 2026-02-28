@@ -62,6 +62,9 @@ Because the backend uses heavy ML libraries (PyTorch, Transformers), it requires
 
 ## Troubleshooting
 
--   **Backend Memory Issues**: The ML models (DistilBERT) are heavy. If the Render Free tier (512MB RAM) crashes, try simpler models or upgrade to a paid plan.
--   **CORS Errors**: Ensure `CORS_ORIGINS` in Render exactly matches your Vercel URL (no trailing slash usually, or check browser console for the exact Origin header sent).
--   **Database**: If reviews disappear after a while, it's because SQLite on Render Free tier is ephemeral. Use PostgreSQL for persistence.
+-   **PowerShell Execution Policy Error**: If you see `File ...npx.ps1 cannot be loaded`, use `cmd /c` before the command:
+    ```powershell
+    cmd /c npx vercel login
+    cmd /c npx vercel --prod
+    ```
+    Or run this once in PowerShell as Administrator: `Set-ExecutionPolicy RemoteSigned -Scope CurrentUser`

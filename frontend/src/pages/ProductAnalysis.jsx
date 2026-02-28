@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Star, MessageSquare, BarChart3, ShieldCheck, Download, Share2, AlertTriangle, CheckCircle2 } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, ResponsiveContainer } from 'recharts';
+import { ArrowLeft, Star, MessageSquare, BarChart3, ShieldCheck, Download, Share2, AlertTriangle, CheckCircle2, ThumbsUp, ThumbsDown, Minus } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getProductAnalysis, exportPDF } from '../services/api';
 import AIInsights from '../components/AIInsights';
@@ -218,18 +218,171 @@ function ProductAnalysis() {
                         </div>
                     )}
 
-                    {/* Placeholders for other tabs for brevity in this refactor, can expand later */}
                     {activeTab === 'aspects' && (
-                        <div className="glass-card p-8 text-center text-white/50">
-                            <BarChart3 className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                            <p>Detailed aspect analysis visualizations coming soon.</p>
+                        <div className="space-y-6">
+                            {data.aspects?.aspects?.length > 0 ? (
+                                <>
+                                    {/* Radar Chart */}
+                                    <div className="glass-card p-6">
+                                        <h3 className="text-lg font-semibold mb-6 flex items-center gap-2">
+                                            <BarChart3 className="w-5 h-5 text-primary-400" />
+                                            Aspect Sentiment Radar
+                                        </h3>
+                                        <div className="h-[350px] w-full">
+                                            <ResponsiveContainer width="100%" height="100%">
+                                                <RadarChart data={data.aspects.aspects.map(a => ({
+                                                    aspect: a.aspect_name.charAt(0).toUpperCase() + a.aspect_name.slice(1),
+                                                    score: Math.round(a.average_score * 100),
+                                                    mentions: a.total_mentions
+                                                }))}>
+                                                    <PolarGrid stroke="rgba(255,255,255,0.1)" />
+                                                    <PolarAngleAxis dataKey="aspect" tick={{ fill: 'rgba(255,255,255,0.6)', fontSize: 11 }} />
+                                                    <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 10 }} />
+                                                    <Radar name="Score" dataKey="score" stroke="#6366f1" fill="#6366f1" fillOpacity={0.3} />
+                                                    <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }} />
+                                                </RadarChart>
+                                            </ResponsiveContainer>
+                                        </div>
+                                    </div>
+
+                                    {/* Aspect Cards Grid */}
+                                    <div className="grid md:grid-cols-2 gap-4">
+                                        {data.aspects.aspects.map((aspect, idx) => {
+                                            const sentColor = aspect.sentiment_label === 'positive' ? 'emerald' : aspect.sentiment_label === 'negative' ? 'rose' : 'amber';
+                                            const SentIcon = aspect.sentiment_label === 'positive' ? ThumbsUp : aspect.sentiment_label === 'negative' ? ThumbsDown : Minus;
+                                            return (
+                                                <motion.div
+                                                    key={aspect.aspect_name}
+                                                    initial={{ opacity: 0, y: 15 }}
+                                                    animate={{ opacity: 1, y: 0 }}
+                                                    transition={{ delay: idx * 0.05 }}
+                                                    className="glass-card p-5 space-y-3"
+                                                >
+                                                    <div className="flex items-center justify-between">
+                                                        <h4 className="font-semibold text-white capitalize">{aspect.aspect_name}</h4>
+                                                        <span className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-${sentColor}-500/10 text-${sentColor}-400 border border-${sentColor}-500/20`}>
+                                                            <SentIcon className="w-3 h-3" />
+                                                            {aspect.sentiment_label}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center gap-4 text-sm text-white/60">
+                                                        <span>{aspect.total_mentions} mentions</span>
+                                                        <span className="text-emerald-400">{aspect.positive_count} positive</span>
+                                                        <span className="text-rose-400">{aspect.negative_count} negative</span>
+                                                    </div>
+                                                    {/* Score bar */}
+                                                    <div className="w-full bg-white/5 rounded-full h-2">
+                                                        <div
+                                                            className={`h-2 rounded-full bg-${sentColor}-500`}
+                                                            style={{ width: `${Math.round(aspect.average_score * 100)}%` }}
+                                                        />
+                                                    </div>
+                                                    {/* Sample reviews */}
+                                                    {aspect.sample_positive?.length > 0 && (
+                                                        <div className="text-xs text-white/40 mt-2">
+                                                            <p className="text-emerald-400/60 mb-1">Top positive:</p>
+                                                            <p className="italic truncate">&ldquo;{aspect.sample_positive[0]}&rdquo;</p>
+                                                        </div>
+                                                    )}
+                                                    {aspect.sample_negative?.length > 0 && (
+                                                        <div className="text-xs text-white/40 mt-1">
+                                                            <p className="text-rose-400/60 mb-1">Top negative:</p>
+                                                            <p className="italic truncate">&ldquo;{aspect.sample_negative[0]}&rdquo;</p>
+                                                        </div>
+                                                    )}
+                                                </motion.div>
+                                            );
+                                        })}
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="glass-card p-8 text-center text-white/50">
+                                    <BarChart3 className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                                    <p>No aspect data available. Try re-analyzing the product.</p>
+                                </div>
+                            )}
                         </div>
                     )}
 
                     {activeTab === 'credibility' && (
-                        <div className="glass-card p-8 text-center text-white/50">
-                            <ShieldCheck className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                            <p>Advanced credibility metrics coming soon.</p>
+                        <div className="space-y-6">
+                            {/* Summary Card */}
+                            <div className="grid md:grid-cols-3 gap-4">
+                                <div className="glass-card p-6">
+                                    <h4 className="text-sm font-medium text-white/50 mb-1">Suspicious Reviews</h4>
+                                    <div className="text-3xl font-bold text-white">{data.fake_reviews_detected}</div>
+                                    <div className="text-xs text-white/40 mt-1">out of {data.total_reviews} total</div>
+                                </div>
+                                <div className="glass-card p-6">
+                                    <h4 className="text-sm font-medium text-white/50 mb-1">Suspicion Rate</h4>
+                                    <div className={`text-3xl font-bold ${(data.fake_review_percent || 0) > 30 ? 'text-rose-400' : (data.fake_review_percent || 0) > 15 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                        {(data.fake_review_percent || 0).toFixed(1)}%
+                                    </div>
+                                    <div className="text-xs text-white/40 mt-1">
+                                        {(data.fake_review_percent || 0) > 30 ? 'High — exercise caution' : (data.fake_review_percent || 0) > 15 ? 'Moderate — some reviews may be unreliable' : 'Low — reviews appear trustworthy'}
+                                    </div>
+                                </div>
+                                <div className="glass-card p-6">
+                                    <h4 className="text-sm font-medium text-white/50 mb-1">Credibility Score</h4>
+                                    <div className="text-3xl font-bold text-primary-400">
+                                        {(100 - (data.fake_review_percent || 0)).toFixed(0)}%
+                                    </div>
+                                    <div className="text-xs text-white/40 mt-1">overall trustworthiness</div>
+                                </div>
+                            </div>
+
+                            {/* Detection Method */}
+                            <div className="glass-card p-6">
+                                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                                    <ShieldCheck className="w-5 h-5 text-primary-400" />
+                                    Detection Methodology
+                                </h3>
+                                <div className="grid md:grid-cols-2 gap-6">
+                                    <div className="space-y-3">
+                                        <h4 className="text-sm font-semibold text-white/70">ML Classifier (70% weight)</h4>
+                                        <p className="text-sm text-white/50 leading-relaxed">
+                                            Trained on labeled dataset using TF-IDF features + handcrafted signals (review length, exclamation density, caps ratio, generic phrases). Logistic Regression with 5-fold stratified cross-validation.
+                                        </p>
+                                        <div className="flex flex-wrap gap-2 text-xs">
+                                            <span className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">97.5% Accuracy</span>
+                                            <span className="px-2 py-1 rounded bg-primary-500/10 text-primary-400 border border-primary-500/20">100% Precision</span>
+                                            <span className="px-2 py-1 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">95.6% Recall</span>
+                                        </div>
+                                    </div>
+                                    <div className="space-y-3">
+                                        <h4 className="text-sm font-semibold text-white/70">Heuristic Engine (30% weight)</h4>
+                                        <p className="text-sm text-white/50 leading-relaxed">
+                                            Rule-based analysis checking for generic phrases, extreme brevity, excessive punctuation, all-caps patterns, rating-sentiment mismatch, and suspicious length patterns.
+                                        </p>
+                                        <div className="flex flex-wrap gap-2 text-xs">
+                                            <span className="px-2 py-1 rounded bg-white/5 text-white/50 border border-white/10">Length Analysis</span>
+                                            <span className="px-2 py-1 rounded bg-white/5 text-white/50 border border-white/10">Pattern Matching</span>
+                                            <span className="px-2 py-1 rounded bg-white/5 text-white/50 border border-white/10">Sentiment Mismatch</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Credibility visual bar */}
+                            <div className="glass-card p-6">
+                                <h3 className="text-lg font-semibold mb-4">Trust Distribution</h3>
+                                <div className="space-y-3">
+                                    <div className="flex items-center gap-3">
+                                        <span className="text-sm text-white/60 w-24">Genuine</span>
+                                        <div className="flex-1 bg-white/5 rounded-full h-4 overflow-hidden">
+                                            <div className="h-full bg-emerald-500 rounded-full transition-all duration-700" style={{ width: `${100 - (data.fake_review_percent || 0)}%` }} />
+                                        </div>
+                                        <span className="text-sm text-emerald-400 w-16 text-right">{(100 - (data.fake_review_percent || 0)).toFixed(1)}%</span>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <span className="text-sm text-white/60 w-24">Suspicious</span>
+                                        <div className="flex-1 bg-white/5 rounded-full h-4 overflow-hidden">
+                                            <div className="h-full bg-rose-500 rounded-full transition-all duration-700" style={{ width: `${data.fake_review_percent || 0}%` }} />
+                                        </div>
+                                        <span className="text-sm text-rose-400 w-16 text-right">{(data.fake_review_percent || 0).toFixed(1)}%</span>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     )}
                 </motion.div>

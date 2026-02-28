@@ -1,5 +1,5 @@
 """Comparison endpoints for comparing multiple products."""
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -67,5 +67,5 @@ async def compare_products(
         products=comparisons,
         best_overall=best_overall,
         aspect_winners=aspect_winners,
-        created_at=datetime.utcnow()
+        created_at=datetime.now(timezone.utc)
     )

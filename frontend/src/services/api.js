@@ -62,10 +62,12 @@ export const exportCSV = (productId) =>
 // Aggregated Analysis (Frontend Helper)
 export const getProductAnalysis = async (productId) => {
     try {
-        const [productRes, insightsRes, aiRes] = await Promise.allSettled([
+        const [productRes, insightsRes, aiRes, aspectRes, sentimentRes] = await Promise.allSettled([
             api.get(`/products/${productId}`),
             api.get(`/products/${productId}/insights`),
-            api.get(`/ai/products/${productId}/ai-summary`)
+            api.get(`/ai/products/${productId}/ai-summary`),
+            api.get(`/products/${productId}/aspects`),
+            api.get(`/products/${productId}/sentiment`)
         ]);
 
         // Handle core data failure
@@ -75,6 +77,8 @@ export const getProductAnalysis = async (productId) => {
         const product = productRes.value.data;
         const insights = insightsRes.value.data;
         const aiAnalysis = aiRes.status === 'fulfilled' ? aiRes.value.data : null;
+        const aspects = aspectRes.status === 'fulfilled' ? aspectRes.value.data : null;
+        const sentiment = sentimentRes.status === 'fulfilled' ? sentimentRes.value.data : null;
 
         return {
             data: {
@@ -83,12 +87,15 @@ export const getProductAnalysis = async (productId) => {
                 avg_rating: product.avg_rating,
                 total_reviews: insights.total_reviews,
                 fake_reviews_detected: insights.fake_review_count,
+                fake_review_percent: insights.fake_review_percent,
                 sentiment_summary: {
                     positive: insights.sentiment_distribution.positive,
                     neutral: insights.sentiment_distribution.neutral,
                     negative: insights.sentiment_distribution.negative
                 },
                 ai_analysis: aiAnalysis,
+                aspects: aspects,
+                sentiment_detail: sentiment,
                 ...insights // Fallback for other fields
             }
         };

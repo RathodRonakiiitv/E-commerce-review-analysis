@@ -9,8 +9,21 @@ settings = get_settings()
 if settings.database_url.startswith("sqlite"):
     engine = create_engine(
         settings.database_url,
-        connect_args={"check_same_thread": False}  # SQLite-specific
+        connect_args={"check_same_thread": False},  # SQLite-specific
+        pool_pre_ping=True,
     )
+
+    # Enable WAL mode for better concurrent read/write performance
+    from sqlalchemy import event as _sa_event
+
+    @_sa_event.listens_for(engine, "connect")
+    def _set_sqlite_wal(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=5000")   # wait up to 5 s on lock
+        cursor.execute("PRAGMA synchronous=NORMAL")   # safe with WAL
+        cursor.close()
+
 else:
     engine = create_engine(
         settings.database_url,

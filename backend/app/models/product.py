@@ -13,7 +13,7 @@ class Product(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(500), nullable=True)
     url = Column(Text, unique=True, nullable=False, index=True)
-    platform = Column(String(50), default="amazon")  # amazon, flipkart
+    platform = Column(String(50), default="flipkart")  # flipkart
     total_reviews = Column(Integer, default=0)
     avg_rating = Column(Numeric(2, 1), nullable=True)
     scraped_at = Column(DateTime, nullable=True)

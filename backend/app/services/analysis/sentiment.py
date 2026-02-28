@@ -1,6 +1,7 @@
 """Sentiment analysis service using HuggingFace Transformers."""
 import asyncio
-from datetime import datetime
+import logging
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
@@ -8,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.models import Product, Review
 from app.config import get_settings
 
+logger = logging.getLogger(__name__)
 settings = get_settings()
 
 # Lazy-loaded transformer pipeline
@@ -25,7 +27,7 @@ def get_sentiment_pipeline():
             model=settings.sentiment_model,
             device=-1  # CPU, use 0 for GPU
         )
-        print(f"[OK] Loaded sentiment model: {settings.sentiment_model}")
+        logger.info("Loaded sentiment model: %s", settings.sentiment_model)
     
     return _sentiment_pipeline
 
@@ -59,7 +61,7 @@ def analyze_text(text: str) -> Tuple[str, float]:
             return 'neutral', score
     
     except Exception as e:
-        print(f"Sentiment analysis error: {e}")
+        logger.warning("Sentiment analysis error: %s", e)
         return "neutral", 0.5
 
 
@@ -94,7 +96,7 @@ def analyze_texts_batch(texts: List[str], batch_size: int = 32) -> List[Tuple[st
                     results.append(('neutral', score))
         
         except Exception as e:
-            print(f"Batch analysis error: {e}")
+            logger.warning("Batch analysis error: %s", e)
             # Fill with neutral for failed batch
             results.extend([('neutral', 0.5)] * len(batch))
     
@@ -122,7 +124,7 @@ async def analyze_product_sentiment(db: Session, product_id: int) -> Dict:
             },
             "rating_vs_sentiment_mismatch": 0,
             "total_reviews": 0,
-            "analyzed_at": datetime.utcnow().isoformat()
+            "analyzed_at": datetime.now(timezone.utc).isoformat()
         }
     
     # Get texts for batch analysis
@@ -141,7 +143,7 @@ async def analyze_product_sentiment(db: Session, product_id: int) -> Dict:
     for review, (label, score) in zip(reviews, sentiments):
         review.sentiment_label = label
         review.sentiment_score = score
-        review.analyzed_at = datetime.utcnow()
+        review.analyzed_at = datetime.now(timezone.utc)
         
         if label == 'positive':
             positive_count += 1
@@ -178,7 +180,7 @@ async def analyze_product_sentiment(db: Session, product_id: int) -> Dict:
     # Update product
     product = db.query(Product).filter(Product.id == product_id).first()
     if product:
-        product.last_analyzed = datetime.utcnow()
+        product.last_analyzed = datetime.now(timezone.utc)
         db.commit()
     
     return {
@@ -195,5 +197,5 @@ async def analyze_product_sentiment(db: Session, product_id: int) -> Dict:
         },
         "rating_vs_sentiment_mismatch": mismatch_count,
         "total_reviews": total,
-        "analyzed_at": datetime.utcnow().isoformat()
+        "analyzed_at": datetime.now(timezone.utc).isoformat()
     }

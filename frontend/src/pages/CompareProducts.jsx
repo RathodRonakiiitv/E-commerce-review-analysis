@@ -137,7 +137,7 @@ function CompareProducts() {
                                     type="url"
                                     value={url1}
                                     onChange={(e) => setUrl1(e.target.value)}
-                                    placeholder="Paste first Amazon/Flipkart URL"
+                                    placeholder="Paste first Flipkart URL"
                                     className="input-field pl-12"
                                     disabled={loading}
                                 />
@@ -156,7 +156,7 @@ function CompareProducts() {
                                     type="url"
                                     value={url2}
                                     onChange={(e) => setUrl2(e.target.value)}
-                                    placeholder="Paste second Amazon/Flipkart URL"
+                                    placeholder="Paste second Flipkart URL"
                                     className="input-field pl-12"
                                     disabled={loading}
                                 />

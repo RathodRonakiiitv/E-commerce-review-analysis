@@ -1,5 +1,5 @@
 """Analysis endpoints for sentiment, aspects, topics, and insights."""
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 
@@ -26,7 +26,7 @@ def get_cached_analysis(db: Session, product_id: int, analysis_type: str):
     
     if cache:
         # Check if cache is less than 24 hours old
-        age = (datetime.utcnow() - cache.created_at).total_seconds()
+        age = (datetime.now(timezone.utc) - cache.created_at.replace(tzinfo=timezone.utc)).total_seconds()
         if age < 86400:  # 24 hours
             return cache.results
     
@@ -142,6 +142,19 @@ async def get_insights(
     save_analysis_cache(db, product_id, "insights", results)
     
     return InsightsResponse(**results)
+
+
+@router.get("/model/metrics")
+async def get_model_metrics():
+    """Return evaluation metrics for the trained fake-review classifier."""
+    from app.services.analysis.fake_detection import get_model_metrics as _metrics
+    metrics = _metrics()
+    if metrics is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Model metrics not available. Train the model first: python -m app.ml.train_fake_classifier",
+        )
+    return metrics
 
 
 @router.post("/{product_id}/reanalyze")

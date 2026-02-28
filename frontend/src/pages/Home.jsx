@@ -60,8 +60,8 @@ function Home() {
         }
 
         // Validate URL
-        if (!url.includes('amazon') && !url.includes('flipkart')) {
-            setError('Please enter a valid Amazon or Flipkart product URL');
+        if (!url.includes('flipkart')) {
+            setError('Please enter a valid Flipkart product URL');
             return;
         }
 
@@ -87,16 +87,23 @@ function Home() {
                         pollRef.current = null;
                         setLoading(false);
 
-                        if (status.product_id) {
+                        if (status.product_id && status.reviews_scraped > 0) {
                             navigate(`/products/${status.product_id}`);
                         } else {
-                            setError('Analysis completed but no product data returned. The scraper may have been blocked or found no reviews.');
+                            setError(
+                                'Scraping finished but collected 0 reviews. ' +
+                                'Flipkart may have blocked the request or the product has no reviews. ' +
+                                'Please wait a moment and try again.'
+                            );
                         }
                     } else if (status.status === 'failed') {
                         clearInterval(pollInterval);
                         pollRef.current = null;
                         setLoading(false);
-                        setError(status.error || 'Analysis failed. Please try again.');
+                        setError(
+                            status.error ||
+                            'Scraping failed. Flipkart may have blocked the request. Please try again in a minute.'
+                        );
                     }
                 } catch (err) {
                     clearInterval(pollInterval);
@@ -144,7 +151,7 @@ function Home() {
                     transition={{ duration: 0.6, delay: 0.2 }}
                     className="text-lg md:text-xl text-white/50 max-w-2xl mx-auto font-light leading-relaxed"
                 >
-                    Transform thousands of Amazon & Flipkart reviews into actionable insights.
+                    Transform thousands of Flipkart reviews into actionable insights.
                     Detect fake reviews, analyze sentiment, and discover hidden trends in seconds.
                 </motion.p>
 
@@ -163,7 +170,7 @@ function Home() {
                                 type="url"
                                 value={url}
                                 onChange={(e) => setUrl(e.target.value)}
-                                placeholder="Paste Amazon or Flipkart product URL..."
+                                placeholder="Paste Flipkart product URL..."
                                 className="w-full bg-transparent border-none text-white placeholder-white/30 pl-12 pr-4 py-3 focus:ring-0 text-base"
                                 disabled={loading}
                             />
@@ -275,7 +282,7 @@ function Home() {
 
                     <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
                         {[
-                            { step: '01', title: 'Paste URL', desc: 'Copy any product link from Amazon or Flipkart.' },
+                            { step: '01', title: 'Paste URL', desc: 'Copy any product link from Flipkart.' },
                             { step: '02', title: 'AI Crunching', desc: 'Our engine scrapes & analyzes thousands of reviews.' },
                             { step: '03', title: 'Actionable Data', desc: 'Get instant sentiment reports & fake review warning.' }
                         ].map((item, i) => (

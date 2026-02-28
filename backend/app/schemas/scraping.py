@@ -16,7 +16,7 @@ class JobStatus(str, Enum):
 
 class ScrapeRequest(BaseModel):
     """Request to start scraping a product."""
-    url: str = Field(..., description="Product URL from Amazon or Flipkart")
+    url: str = Field(..., description="Flipkart product URL")
     max_reviews: int = Field(default=200, ge=10, le=500, description="Max reviews to scrape")
 
 

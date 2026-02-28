@@ -35,6 +35,9 @@ logs/
 # Database
 *.sqlite
 *.db
+*.db-shm
+*.db-wal
+*.db-journal
 
 # OS files
 .DS_Store

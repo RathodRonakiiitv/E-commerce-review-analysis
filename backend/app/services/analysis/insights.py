@@ -1,5 +1,5 @@
 """Insights generator - aggregates all analysis into key findings."""
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict
 from collections import Counter
 
@@ -40,7 +40,7 @@ async def generate_product_insights(db: Session, product_id: int) -> Dict:
             "common_complaints": [],
             "fake_review_count": 0,
             "fake_review_percent": 0.0,
-            "analyzed_at": datetime.utcnow().isoformat()
+            "analyzed_at": datetime.now(timezone.utc).isoformat()
         }
     
     # Calculate rating distribution
@@ -120,7 +120,7 @@ async def generate_product_insights(db: Session, product_id: int) -> Dict:
         "common_complaints": common_complaints,
         "fake_review_count": fake_count,
         "fake_review_percent": fake_percent,
-        "analyzed_at": datetime.utcnow().isoformat()
+        "analyzed_at": datetime.now(timezone.utc).isoformat()
     }
 
 

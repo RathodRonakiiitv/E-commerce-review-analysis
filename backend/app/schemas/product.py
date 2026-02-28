@@ -9,12 +9,12 @@ class ProductBase(BaseModel):
     """Base product fields."""
     name: Optional[str] = None
     url: str
-    platform: str = "amazon"
+    platform: str = "flipkart"
 
 
 class ProductCreate(BaseModel):
     """Schema for creating a product via scraping."""
-    url: str = Field(..., description="Product URL from Amazon or Flipkart")
+    url: str = Field(..., description="Flipkart product URL")
     max_reviews: int = Field(default=200, ge=10, le=500, description="Max reviews to scrape")
 
 

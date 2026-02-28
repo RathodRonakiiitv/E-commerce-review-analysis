@@ -1,5 +1,7 @@
 """Groq AI service for intelligent review analysis and suggestions."""
+import asyncio
 import logging
+import re
 from typing import List, Dict, Optional
 import httpx
 
@@ -21,6 +23,72 @@ class GroqService:
         else:
             logger.warning("Groq API key not found! AI features will be disabled.")
     
+    def _parse_summary_sections(self, text: str) -> Dict:
+        """Parse the AI markdown response into structured sections."""
+        sections: Dict = {}
+
+        # Normalise header markers so we can split reliably
+        # Handles: ## Header, **Header**, **Header**:, 1. **Header**
+        def _find_section(pattern: str, text: str) -> Optional[str]:
+            """Return text after a header matching *pattern* up to the next header."""
+            header_re = re.compile(
+                r'(?:^|\n)\s*(?:\d+\.\s*)?(?:\*\*|#{1,3}\s*)' + pattern + r'(?:\*\*)?[:\s]*\n',
+                re.IGNORECASE,
+            )
+            m = header_re.search(text)
+            if not m:
+                return None
+            start = m.end()
+            # Find next header
+            next_header = re.search(
+                r'\n\s*(?:\d+\.\s*)?(?:\*\*|#{1,3}\s*)\w',
+                text[start:],
+            )
+            end = start + next_header.start() if next_header else len(text)
+            return text[start:end].strip()
+
+        def _extract_bullets(block: Optional[str]) -> List[str]:
+            """Pull bullet-point lines out of a text block."""
+            if not block:
+                return []
+            items = []
+            for line in block.split('\n'):
+                line = line.strip()
+                # Match lines starting with -, *, •, or numbered bullets
+                cleaned = re.sub(r'^[-*•]\s*', '', line)
+                cleaned = re.sub(r'^\d+[.)]\s*', '', cleaned)
+                cleaned = cleaned.strip()
+                if cleaned and cleaned != line.strip():
+                    # Only add if we actually stripped a bullet marker
+                    items.append(cleaned)
+                elif cleaned and len(cleaned) > 10:
+                    # Fallback: substantial lines without bullet markers
+                    items.append(cleaned)
+            return items if items else [block]
+
+        # Executive Summary
+        summary_block = _find_section(r'Executive\s+Summary', text)
+        if summary_block:
+            sections['summary'] = summary_block
+        else:
+            # Fallback: use everything before first recognized header
+            first_header = re.search(r'\n\s*(?:\d+\.\s*)?(?:\*\*|#{1,3}\s*)(?:Key|Purchase|Suggested)', text, re.IGNORECASE)
+            sections['summary'] = text[:first_header.start()].strip() if first_header else text.strip()
+
+        # Key Strengths → pros
+        pros_block = _find_section(r'Key\s+Strengths?', text)
+        sections['pros'] = _extract_bullets(pros_block)
+
+        # Key Weaknesses → cons
+        cons_block = _find_section(r'Key\s+Weakness(?:es)?|Common\s+Complaints?', text)
+        sections['cons'] = _extract_bullets(cons_block)
+
+        # Purchase Recommendation
+        rec_block = _find_section(r'Purchase\s+Recommendation', text)
+        sections['recommendation'] = rec_block or ""
+
+        return sections
+
     async def generate_review_summary(self, reviews: List[Dict], product_name: str) -> Dict:
         """
         Generate an AI summary of product reviews.
@@ -59,55 +127,88 @@ Reviews:
 
 Provide a helpful, balanced analysis."""
 
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    self.base_url,
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "model": self.model,
-                        "messages": [
-                            {
-                                "role": "system",
-                                "content": "You are an expert product analyst. Provide concise, actionable insights from customer reviews. Be balanced and helpful."
-                            },
-                            {
-                                "role": "user",
-                                "content": prompt
-                            }
-                        ],
-                        "temperature": 0.7,
-                        "max_tokens": 1000
-                    }
-                )
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    ai_response = data["choices"][0]["message"]["content"]
-                    
-                    return {
-                        "summary": ai_response,
-                        "model": self.model,
-                        "reviews_analyzed": len(review_sample),
-                        "error": None
-                    }
-                else:
-                    error_detail = response.text
-                    logger.error(f"Groq API error {response.status_code}: {error_detail}")
-                    return {
-                        "error": f"Groq API error: {response.status_code} - {error_detail[:200]}",
-                        "summary": None,
-                        "details": error_detail
-                    }
-                    
-        except Exception as e:
-            return {
-                "error": str(e),
-                "summary": None
-            }
+        max_retries = 2
+        last_error = None
+
+        for attempt in range(1, max_retries + 2):
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    response = await client.post(
+                        self.base_url,
+                        headers={
+                            "Authorization": f"Bearer {self.api_key}",
+                            "Content-Type": "application/json"
+                        },
+                        json={
+                            "model": self.model,
+                            "messages": [
+                                {
+                                    "role": "system",
+                                    "content": "You are an expert product analyst. Provide concise, actionable insights from customer reviews. Be balanced and helpful."
+                                },
+                                {
+                                    "role": "user",
+                                    "content": prompt
+                                }
+                            ],
+                            "temperature": 0.7,
+                            "max_tokens": 1000
+                        }
+                    )
+
+                    if response.status_code == 200:
+                        data = response.json()
+                        ai_response = data["choices"][0]["message"]["content"]
+                        parsed = self._parse_summary_sections(ai_response)
+
+                        return {
+                            "summary": parsed.get("summary", ai_response),
+                            "pros": parsed.get("pros", []),
+                            "cons": parsed.get("cons", []),
+                            "recommendation": parsed.get("recommendation", ""),
+                            "model": self.model,
+                            "reviews_analyzed": len(review_sample),
+                            "error": None
+                        }
+                    elif response.status_code == 429:
+                        # Rate limited — wait and retry
+                        wait = 2.0 * attempt
+                        logger.warning("Groq rate limited (429), retrying in %.1fs ...", wait)
+                        last_error = f"Rate limited (attempt {attempt})"
+                        await asyncio.sleep(wait)
+                        continue
+                    elif response.status_code >= 500:
+                        # Server error — retry
+                        wait = 3.0 * attempt
+                        logger.warning("Groq server error %d, retrying in %.1fs ...", response.status_code, wait)
+                        last_error = f"Server error {response.status_code}"
+                        await asyncio.sleep(wait)
+                        continue
+                    else:
+                        error_detail = response.text
+                        logger.error("Groq API error %d: %s", response.status_code, error_detail)
+                        return {
+                            "error": f"Groq API error: {response.status_code} - {error_detail[:200]}",
+                            "summary": None,
+                            "details": error_detail
+                        }
+
+            except (httpx.TimeoutException, httpx.ConnectError) as e:
+                wait = 3.0 * attempt
+                logger.warning("Groq request failed (%s), retrying in %.1fs ...", e, wait)
+                last_error = str(e)
+                await asyncio.sleep(wait)
+                continue
+            except Exception as e:
+                return {
+                    "error": str(e),
+                    "summary": None
+                }
+
+        return {
+            "error": f"Groq API failed after {max_retries + 1} attempts: {last_error}",
+            "summary": None
+        }
     
     async def generate_aspect_deep_dive(self, aspect: str, reviews: List[Dict], product_name: str) -> Dict:
         """

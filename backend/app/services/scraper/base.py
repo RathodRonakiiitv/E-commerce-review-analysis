@@ -1,7 +1,7 @@
 """Base scraper with common functionality and platform routing."""
 import asyncio
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Callable, Optional, Tuple
 from urllib.parse import urlparse
 
@@ -10,34 +10,20 @@ from app.models import Product, Review
 
 
 def detect_platform(url: str) -> str:
-    """Detect e-commerce platform from URL."""
+    """Detect e-commerce platform from URL. Only Flipkart is supported."""
     domain = urlparse(url).netloc.lower()
-    if "amazon" in domain:
-        return "amazon"
-    elif "flipkart" in domain:
+    if "flipkart" in domain:
         return "flipkart"
     else:
-        raise ValueError(f"Unsupported platform: {domain}")
+        raise ValueError(f"Unsupported platform: {domain}. Only Flipkart URLs are supported.")
 
 
 def clean_product_url(url: str, platform: str) -> str:
-    """Extract and clean the product URL."""
-    if platform == "amazon":
-        # Extract ASIN and build clean URL
-        asin_match = re.search(r'/dp/([A-Z0-9]{10})', url)
-        if asin_match:
-            asin = asin_match.group(1)
-            # Determine domain
-            if ".in" in url:
-                return f"https://www.amazon.in/dp/{asin}"
-            else:
-                return f"https://www.amazon.com/dp/{asin}"
-    elif platform == "flipkart":
-        # Clean Flipkart URL - strip all tracking/query params
-        # Only the path matters: /product-name/p/itmXXX
+    """Extract and clean the Flipkart product URL."""
+    if platform == "flipkart":
+        # Clean Flipkart URL – strip tracking / query params
         parsed = urlparse(url)
         return f"https://www.flipkart.com{parsed.path}"
-    
     return url
 
 
@@ -47,10 +33,10 @@ async def scrape_product(
     progress_callback: Optional[Callable[[int, int], None]] = None
 ) -> Tuple[int, int]:
     """
-    Scrape a product and its reviews.
+    Scrape a Flipkart product and its reviews.
     
     Args:
-        url: Product URL from Amazon or Flipkart
+        url: Flipkart product URL
         max_reviews: Maximum number of reviews to scrape
         progress_callback: Callback function(progress_percent, reviews_count)
     
@@ -73,13 +59,9 @@ async def scrape_product(
             db.commit()
             db.refresh(product)
         
-        # Import platform-specific scraper
-        if platform == "amazon":
-            from app.services.scraper.amazon import AmazonScraper
-            scraper = AmazonScraper()
-        else:
-            from app.services.scraper.flipkart import FlipkartScraper
-            scraper = FlipkartScraper()
+        # Import Flipkart scraper
+        from app.services.scraper.flipkart import FlipkartScraper
+        scraper = FlipkartScraper()
         
         # Define progress wrapper
         def update_progress(current: int, total: int):
@@ -87,18 +69,29 @@ async def scrape_product(
                 percent = int((current / total) * 100) if total > 0 else 0
                 progress_callback(percent, current)
         
-        # Scrape reviews
-        reviews_data = await scraper.scrape_reviews(
+        # Scrape reviews (with automatic retry on zero results)
+        reviews_data = await scraper.scrape_reviews_with_retry(
             clean_url,
             max_reviews=max_reviews,
-            progress_callback=update_progress
+            progress_callback=update_progress,
         )
+        
+        if not reviews_data:
+            # Clean up the empty product so we don't leave ghost entries
+            if not existing:
+                db.delete(product)
+                db.commit()
+            raise RuntimeError(
+                "Scraper collected 0 reviews. Flipkart may have shown a CAPTCHA, "
+                "the product may have no reviews, or the page layout changed. "
+                "Please try again in a minute."
+            )
         
         # Update product info
         if reviews_data:
             product.name = scraper.product_name
             product.total_reviews = len(reviews_data)
-            product.scraped_at = datetime.utcnow()
+            product.scraped_at = datetime.now(timezone.utc)
             
             # Calculate average rating
             ratings = [r['rating'] for r in reviews_data if r.get('rating')]
