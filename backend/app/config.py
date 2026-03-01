@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     
     # API
     api_secret_key: str = "dev-secret-key"
-    cors_origins: str = "http://localhost:3000,http://localhost:3001,http://localhost:5173,https://review-analyzer-frontend-ochre.vercel.app"
+    cors_origins: str = "http://localhost:3000,http://localhost:3001,http://localhost:5173,https://review-analyzer-frontend-ochre.vercel.app,https://e-commerce-review-analysis.vercel.app"
     
     # Scraping
     request_timeout: int = 10

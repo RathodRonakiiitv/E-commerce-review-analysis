@@ -21,6 +21,12 @@ COPY . .
 # Set environment variable for UTF-8 encoding
 ENV PYTHONIOENCODING=utf-8
 
+# Use lightweight sentiment on Render (free tier has limited RAM)
+ENV LIGHTWEIGHT_SENTIMENT=true
+
+# Download NLTK VADER lexicon for lightweight sentiment
+RUN python -c "import nltk; nltk.download('vader_lexicon', download_dir='/usr/share/nltk_data')"
+
 # Expose port
 EXPOSE 8000
 

@@ -16,20 +16,65 @@ settings = get_settings()
 _sentiment_pipeline = None
 
 
+def _use_lightweight_sentiment() -> bool:
+    """Check if we should use lightweight VADER-based sentiment (e.g. on Render free tier)."""
+    import os
+    return os.environ.get("LIGHTWEIGHT_SENTIMENT", "").lower() in ("1", "true", "yes")
+
+
 def get_sentiment_pipeline():
     """Get or create the sentiment analysis pipeline."""
     global _sentiment_pipeline
     
     if _sentiment_pipeline is None:
-        from transformers import pipeline
-        _sentiment_pipeline = pipeline(
-            "sentiment-analysis",
-            model=settings.sentiment_model,
-            device=-1  # CPU, use 0 for GPU
-        )
-        logger.info("Loaded sentiment model: %s", settings.sentiment_model)
+        if _use_lightweight_sentiment():
+            logger.info("Using lightweight VADER sentiment (LIGHTWEIGHT_SENTIMENT=true)")
+            _sentiment_pipeline = "vader"
+        else:
+            from transformers import pipeline
+            _sentiment_pipeline = pipeline(
+                "sentiment-analysis",
+                model=settings.sentiment_model,
+                device=-1  # CPU, use 0 for GPU
+            )
+            logger.info("Loaded sentiment model: %s", settings.sentiment_model)
     
     return _sentiment_pipeline
+
+
+def _keyword_sentiment(text: str) -> Tuple[str, float]:
+    """Simple keyword-based sentiment as ultimate fallback."""
+    text_lower = text.lower()
+    pos_words = ["good", "great", "excellent", "amazing", "love", "best", "awesome", "perfect",
+                 "nice", "happy", "fantastic", "wonderful", "superb", "beautiful", "satisfied",
+                 "recommend", "worth", "quality", "comfortable", "smooth"]
+    neg_words = ["bad", "worst", "terrible", "poor", "hate", "awful", "horrible", "disappointed",
+                 "waste", "broken", "useless", "defective", "cheap", "slow", "uncomfortable",
+                 "return", "refund", "complaint", "damaged", "fake"]
+    pos = sum(1 for w in pos_words if w in text_lower)
+    neg = sum(1 for w in neg_words if w in text_lower)
+    if pos > neg:
+        return "positive", 0.7 + min(pos * 0.05, 0.25)
+    elif neg > pos:
+        return "negative", 0.7 + min(neg * 0.05, 0.25)
+    return "neutral", 0.5
+
+
+def _vader_analyze(text: str) -> Tuple[str, float]:
+    """Lightweight rule-based sentiment using NLTK's VADER."""
+    try:
+        from nltk.sentiment.vader import SentimentIntensityAnalyzer
+        sid = SentimentIntensityAnalyzer()
+        scores = sid.polarity_scores(text)
+        compound = scores["compound"]
+        if compound >= 0.05:
+            return "positive", (compound + 1) / 2  # normalize 0-1
+        elif compound <= -0.05:
+            return "negative", (-compound + 1) / 2
+        return "neutral", 0.5
+    except Exception:
+        # NLTK not installed or vader_lexicon not downloaded
+        return _keyword_sentiment(text)
 
 
 def analyze_text(text: str) -> Tuple[str, float]:
@@ -46,8 +91,13 @@ def analyze_text(text: str) -> Tuple[str, float]:
     text = text[:512]
     
     try:
-        pipeline = get_sentiment_pipeline()
-        result = pipeline(text)[0]
+        pipe = get_sentiment_pipeline()
+        
+        # Use lightweight VADER if configured
+        if pipe == "vader":
+            return _vader_analyze(text)
+        
+        result = pipe(text)[0]
         
         label = result['label'].lower()
         score = result['score']
@@ -73,7 +123,11 @@ def analyze_texts_batch(texts: List[str], batch_size: int = 32) -> List[Tuple[st
         List of (label, score) tuples
     """
     results = []
-    pipeline = get_sentiment_pipeline()
+    pipe = get_sentiment_pipeline()
+    
+    # VADER path — just run each text individually (it's fast)
+    if pipe == "vader":
+        return [_vader_analyze(t[:512] if t else "") for t in texts]
     
     # Process in batches
     for i in range(0, len(texts), batch_size):
@@ -82,7 +136,7 @@ def analyze_texts_batch(texts: List[str], batch_size: int = 32) -> List[Tuple[st
         batch = [t[:512] if t else "" for t in batch]
         
         try:
-            batch_results = pipeline(batch)
+            batch_results = pipe(batch)
             
             for result in batch_results:
                 label = result['label'].lower()

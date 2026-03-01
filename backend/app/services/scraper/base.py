@@ -115,6 +115,10 @@ async def scrape_product(
         
         db.commit()
         
+        # Free Playwright / scraper memory before heavy analysis
+        import gc
+        gc.collect()
+        
         # Run initial analysis
         from app.services.analysis import run_complete_analysis
         await run_complete_analysis(product.id)
