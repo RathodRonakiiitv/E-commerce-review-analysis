@@ -5,9 +5,25 @@ const API_BASE_URL = `${API_HOST}/api`;
 
 const api = axios.create({
     baseURL: API_BASE_URL,
+    timeout: 120000, // 2 minute timeout for cold starts
     headers: {
         'Content-Type': 'application/json',
     },
+});
+
+// Auto-retry for Render free tier cold starts
+api.interceptors.response.use(null, async (error) => {
+    const config = error.config;
+    if (!config || config.__retryCount >= 3) return Promise.reject(error);
+
+    const isNetworkError = !error.response || error.code === 'ERR_NETWORK' || error.code === 'ECONNABORTED';
+    if (!isNetworkError) return Promise.reject(error);
+
+    config.__retryCount = (config.__retryCount || 0) + 1;
+    console.log(`⏳ Backend waking up... retry ${config.__retryCount}/3`);
+
+    await new Promise(r => setTimeout(r, config.__retryCount * 5000));
+    return api(config);
 });
 
 // Products
