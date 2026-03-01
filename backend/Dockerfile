@@ -2,7 +2,7 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies (gcc for C extensions, plus Playwright OS deps)
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
@@ -11,6 +11,9 @@ RUN apt-get update && apt-get install -y \
 # Copy requirements first for caching
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Install Playwright Chromium browser + its OS-level dependencies
+RUN playwright install --with-deps chromium
 
 # Copy application
 COPY . .
