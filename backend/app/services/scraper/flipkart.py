@@ -180,11 +180,27 @@ class FlipkartScraper:
     async def _navigate_via_search(self, search_term: str, page):
         """Search for a product on Flipkart. Returns the search-results page."""
         logger.info("Visiting flipkart.com ...")
-        await page.goto(
-            "https://www.flipkart.com",
-            wait_until="domcontentloaded",
-            timeout=30_000,
-        )
+        last_nav_error = None
+        for wait_until in ("domcontentloaded", "load"):
+            try:
+                await page.goto(
+                    "https://www.flipkart.com",
+                    wait_until=wait_until,
+                    timeout=60_000,
+                )
+                last_nav_error = None
+                break
+            except Exception as exc:
+                last_nav_error = exc
+                logger.warning(
+                    "Flipkart landing failed with wait_until=%s: %s",
+                    wait_until,
+                    exc,
+                )
+
+        if last_nav_error is not None:
+            raise last_nav_error
+
         await page.wait_for_timeout(2000)
 
         # Dismiss login pop-up

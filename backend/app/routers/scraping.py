@@ -92,8 +92,14 @@ async def run_scrape_job(job_id: str, url: str, max_reviews: int):
             scrape_jobs[job_id]["message"] = f"Successfully scraped {reviews_count} reviews"
         
     except Exception as e:
+        error_text = str(e)
+        if "Timeout" in error_text or "timeout" in error_text:
+            error_text = (
+                "Flipkart took too long to respond. Please try again in a minute "
+                "or reduce the review count to 50."
+            )
         scrape_jobs[job_id]["status"] = JobStatus.FAILED
-        scrape_jobs[job_id]["error"] = str(e)
+        scrape_jobs[job_id]["error"] = error_text
         scrape_jobs[job_id]["completed_at"] = datetime.now(timezone.utc)
 
 
