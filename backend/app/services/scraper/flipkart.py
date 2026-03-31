@@ -275,6 +275,38 @@ class FlipkartScraper:
         return product_page, product_url, review_base_url
 
     @_retry_async(max_retries=1, backoff=2.0)
+    async def _open_product_direct(self, page, product_url: str):
+        """Open the provided product URL directly and extract review link hints."""
+        logger.info("Opening product URL directly ...")
+        await page.goto(
+            product_url,
+            wait_until="domcontentloaded",
+            timeout=60_000,
+        )
+        await page.wait_for_timeout(3000)
+
+        resolved_url = page.url
+        html = await page.content()
+        soup = BeautifulSoup(html, "html.parser")
+
+        if not self.product_name:
+            self.product_name = self._extract_product_name_from_soup(soup)
+
+        review_base_url = None
+        review_links = soup.find_all("a", href=lambda h: h and "product-reviews" in h)
+        if review_links:
+            href = review_links[0].get("href", "")
+            if href.startswith("/"):
+                href = f"https://www.flipkart.com{href}"
+            href = re.sub(r"[&?]page=\d+", "", href)
+            review_base_url = href
+
+        if not review_base_url and "/p/" in resolved_url:
+            review_base_url = self._convert_to_review_url(resolved_url)
+
+        return page, resolved_url, review_base_url
+
+    @_retry_async(max_retries=1, backoff=2.0)
     async def _navigate_to_reviews(
         self, product_page, product_url: str, page_num: int = 1,
         review_base_url: Optional[str] = None,
@@ -619,33 +651,46 @@ class FlipkartScraper:
             await self._launch_browser()
             page = await self._context.new_page()
 
-            # ── 1. Search ──
-            search_term = self._extract_search_term(product_url)
-            search_page = await self._navigate_via_search(search_term, page)
+            product_page = None
+            product_url_resolved = None
+            review_base_url = None
 
-            # ── 2. Collect reviews visible on search results ──
-            search_html = await search_page.content()
-            search_soup = BeautifulSoup(search_html, "html.parser")
-            search_reviews = self._parse_reviews_from_soup(search_soup)
+            # ── 1. Try direct product URL first ──
+            try:
+                product_page, product_url_resolved, review_base_url = await self._open_product_direct(
+                    page, product_url
+                )
+                logger.info("Direct product open succeeded")
+            except Exception as direct_err:
+                logger.warning("Direct product open failed: %s", direct_err)
 
-            if search_reviews:
-                for r in search_reviews:
-                    if len(all_reviews) >= max_reviews:
-                        break
-                    if not any(e["text"] == r["text"] for e in all_reviews):
-                        all_reviews.append(r)
-                logger.info("Search page: %d reviews", len(all_reviews))
+            # ── 2. Fallback: search flow if direct open did not yield a product URL ──
+            if not product_page or not product_url_resolved:
+                search_term = self._extract_search_term(product_url)
+                search_page = await self._navigate_via_search(search_term, page)
 
-            if progress_callback:
-                progress_callback(len(all_reviews), max_reviews)
+                # Collect any reviews visible on search result cards
+                search_html = await search_page.content()
+                search_soup = BeautifulSoup(search_html, "html.parser")
+                search_reviews = self._parse_reviews_from_soup(search_soup)
 
-            # ── 3. Open product page (new tab) ──
-            product_page, product_url_resolved, review_base_url = (
-                await self._find_product_and_navigate(search_page)
-            )
+                if search_reviews:
+                    for r in search_reviews:
+                        if len(all_reviews) >= max_reviews:
+                            break
+                        if not any(e["text"] == r["text"] for e in all_reviews):
+                            all_reviews.append(r)
+                    logger.info("Search page: %d reviews", len(all_reviews))
+
+                if progress_callback:
+                    progress_callback(len(all_reviews), max_reviews)
+
+                product_page, product_url_resolved, review_base_url = (
+                    await self._find_product_and_navigate(search_page)
+                )
 
             if not product_page or not product_url_resolved:
-                logger.info("Could not open product page — returning search reviews only")
+                logger.info("Could not open product page — returning collected reviews only")
                 return all_reviews
 
             # ── 4. Paginate through review pages ──
