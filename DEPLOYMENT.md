@@ -24,8 +24,10 @@ Because the backend uses heavy ML libraries (PyTorch, Transformers), it requires
 5.  **Environment Variables**:
     - `GROQ_API_KEY`: Add your actual Groq API Key.
     - `CORS_ORIGINS`: Update this later with your Vercel URL (e.g., `https://your-app.vercel.app`). For now, you can leave the default or add `*` for testing (not recommended for production).
-    - `DATABASE_URL`: Render will automatically set this if you add a Database, or it will use SQLite (temporary file system) if you don't.
-      - **Note**: The **Free Tier** on Render refreshes the filesystem on restart, so SQLite data will be lost. For persistence, create a **Render PostgreSQL** database and link it (Render usually prompts for this if using `render.yaml`).
+        - `DATABASE_URL`: Add this manually in Render using your external PostgreSQL provider (Neon, Supabase, Railway, Aiven, etc.).
+            - Example: `postgresql://USER:PASSWORD@HOST:5432/DB?sslmode=require`
+            - `postgres://...` URLs are also accepted by the backend and normalized automatically.
+            - Avoid SQLite on Render free tier because filesystem data is not persistent.
 6.  **Deploy**: Click **Create Web Service**.
     - The build may take 5-10 minutes due to ML dependencies.
 7.  **Copy the Backend URL**: Once deployed, copy the URL (e.g., `https://review-analyzer-backend.onrender.com`).
@@ -68,3 +70,21 @@ Because the backend uses heavy ML libraries (PyTorch, Transformers), it requires
     cmd /c npx vercel --prod
     ```
     Or run this once in PowerShell as Administrator: `Set-ExecutionPolicy RemoteSigned -Scope CurrentUser`
+
+---
+
+## Migrating From Expiring Render DB
+
+If your current Render PostgreSQL instance is expiring, migrate data before shutdown.
+
+1.  Export old database (from your machine with `pg_dump` installed):
+    ```powershell
+    pg_dump "OLD_RENDER_DATABASE_URL" -Fc -f review_analyzer_backup.dump
+    ```
+2.  Create a new PostgreSQL database on your target provider.
+3.  Import data into the new database:
+    ```powershell
+    pg_restore --no-owner --no-privileges -d "NEW_DATABASE_URL" review_analyzer_backup.dump
+    ```
+4.  In Render -> your backend service -> **Environment**, update `DATABASE_URL` to the new URL.
+5.  Trigger a deploy and verify the API health endpoint and product analysis flow.

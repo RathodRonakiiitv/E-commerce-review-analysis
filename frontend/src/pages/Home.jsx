@@ -74,11 +74,13 @@ function Home() {
             // Start scraping
             const { data } = await startScraping(url, maxReviews);
             const jobId = data.job_id;
+            let consecutivePollFailures = 0;
 
             // Poll for status
             const pollInterval = setInterval(async () => {
                 try {
                     const { data: status } = await getScrapeStatus(jobId);
+                    consecutivePollFailures = 0;
                     setProgress(status.progress);
                     setStatusMessage(status.message || `Processing ${status.reviews_scraped} reviews...`);
 
@@ -106,17 +108,41 @@ function Home() {
                         );
                     }
                 } catch (err) {
+                    const statusCode = err?.response?.status;
+
+                    if (statusCode === 404) {
+                        clearInterval(pollInterval);
+                        pollRef.current = null;
+                        setLoading(false);
+                        setError('Analysis session expired. Please click Analyze again.');
+                        return;
+                    }
+
+                    consecutivePollFailures += 1;
+                    if (consecutivePollFailures <= 5) {
+                        setStatusMessage(
+                            `Connection unstable. Retrying status check (${consecutivePollFailures}/5)...`
+                        );
+                        return;
+                    }
+
                     clearInterval(pollInterval);
                     pollRef.current = null;
                     setLoading(false);
-                    setError('Connection lost. Retrying...');
+                    setError(
+                        err.response?.data?.detail ||
+                        'Unable to reach server after multiple retries. Please try again.'
+                    );
                 }
             }, 2000);
             pollRef.current = pollInterval;
 
         } catch (err) {
             setLoading(false);
-            setError(err.response?.data?.detail || 'Failed to initiate analysis');
+            setError(
+                err.response?.data?.detail ||
+                'Failed to initiate analysis. Please check backend URL and try again.'
+            );
         }
     };
 

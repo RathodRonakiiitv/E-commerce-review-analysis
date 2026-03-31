@@ -5,10 +5,23 @@ from app.config import get_settings
 
 settings = get_settings()
 
+
+def _normalize_database_url(url: str) -> str:
+    """Normalize provider URLs to SQLAlchemy-compatible PostgreSQL driver URLs."""
+    normalized = (url or "").strip()
+    if normalized.startswith("postgres://"):
+        return normalized.replace("postgres://", "postgresql+psycopg2://", 1)
+    if normalized.startswith("postgresql://"):
+        return normalized.replace("postgresql://", "postgresql+psycopg2://", 1)
+    return normalized
+
+
+database_url = _normalize_database_url(settings.database_url)
+
 # Create engine - handle SQLite vs PostgreSQL differences
-if settings.database_url.startswith("sqlite"):
+if database_url.startswith("sqlite"):
     engine = create_engine(
-        settings.database_url,
+        database_url,
         connect_args={"check_same_thread": False},  # SQLite-specific
         pool_pre_ping=True,
     )
@@ -26,7 +39,7 @@ if settings.database_url.startswith("sqlite"):
 
 else:
     engine = create_engine(
-        settings.database_url,
+        database_url,
         pool_pre_ping=True,
         pool_size=5,
         max_overflow=10

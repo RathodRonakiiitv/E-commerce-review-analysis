@@ -8,9 +8,7 @@ services:
     dockerContext: backend
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
-          name: review-analyzer-db
-          property: connectionString
+        sync: false
       - key: GROQ_API_KEY
         sync: false
       - key: SENTIMENT_MODEL
@@ -18,10 +16,3 @@ services:
       - key: CORS_ORIGINS
         value: "http://localhost:3000,http://localhost:3001,https://your-vercel-app.vercel.app"
     autoDeploy: false
-
-databases:
-  - name: review-analyzer-db
-    databaseName: review_analyzer
-    user: review_analyzer_user
-    plan: free
-    ipAllowList: []
