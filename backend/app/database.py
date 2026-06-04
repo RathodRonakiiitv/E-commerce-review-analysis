@@ -63,5 +63,5 @@ def get_db():
 
 def init_db():
     """Initialize database tables."""
-    from app.models import product, review, analysis  # noqa: F401
+    import app.models  # Ensure all models are loaded
     Base.metadata.create_all(bind=engine)

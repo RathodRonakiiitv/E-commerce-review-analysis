@@ -4,11 +4,14 @@ import sys
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Request
-from typing import Dict
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Request, Depends
+from typing import Dict, Optional
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from sqlalchemy.orm import Session
 
+from app.database import get_db, SessionLocal
+from app.models.job import ScrapeJob
 from app.schemas.scraping import ScrapeRequest, ScrapeStatusResponse, JobStatus
 
 router = APIRouter()
@@ -17,24 +20,25 @@ limiter = Limiter(key_func=get_remote_address)
 # Thread pool for running Playwright (needs ProactorEventLoop on Windows)
 _scrape_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="scraper")
 
-# In-memory job storage (in production, use Redis)
-scrape_jobs: Dict[str, dict] = {}
-
-# Maximum completed jobs to keep in memory
+# Maximum completed jobs to keep in database
 _MAX_COMPLETED_JOBS = 200
 
 
-def _cleanup_old_jobs():
+def _cleanup_old_jobs(db: Session):
     """Remove oldest completed/failed jobs when storage exceeds limit."""
-    finished = [
-        (k, v) for k, v in scrape_jobs.items()
-        if v["status"] in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED)
-    ]
-    if len(finished) > _MAX_COMPLETED_JOBS:
-        # Sort by completion time, remove oldest
-        finished.sort(key=lambda kv: kv[1].get("completed_at") or datetime.min)
-        for k, _ in finished[: len(finished) - _MAX_COMPLETED_JOBS]:
-            del scrape_jobs[k]
+    finished_count = db.query(ScrapeJob).filter(
+        ScrapeJob.status.in_([JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED])
+    ).count()
+
+    if finished_count > _MAX_COMPLETED_JOBS:
+        # Find oldest jobs to delete
+        old_jobs = db.query(ScrapeJob).filter(
+            ScrapeJob.status.in_([JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED])
+        ).order_by(ScrapeJob.completed_at.asc()).limit(finished_count - _MAX_COMPLETED_JOBS).all()
+        
+        for job in old_jobs:
+            db.delete(job)
+        db.commit()
 
 
 def detect_platform(url: str) -> str:
@@ -50,9 +54,15 @@ async def run_scrape_job(job_id: str, url: str, max_reviews: int):
     """Background task to run scraping job."""
     from app.services.scraper import scrape_product
     
+    db = SessionLocal()
     try:
-        scrape_jobs[job_id]["status"] = JobStatus.RUNNING
-        scrape_jobs[job_id]["started_at"] = datetime.now(timezone.utc)
+        job = db.query(ScrapeJob).filter(ScrapeJob.job_id == job_id).first()
+        if not job:
+            return
+
+        job.status = JobStatus.RUNNING
+        job.started_at = datetime.now(timezone.utc)
+        db.commit()
         
         # Playwright needs ProactorEventLoop for subprocess support on Windows.
         # uvicorn's event loop doesn't support it, so we run the scraper
@@ -79,17 +89,20 @@ async def run_scrape_job(job_id: str, url: str, max_reviews: int):
             _scrape_pool, _scrape_in_thread
         )
         
+        # Re-fetch job to update it
+        job = db.query(ScrapeJob).filter(ScrapeJob.job_id == job_id).first()
         if reviews_count == 0:
-            scrape_jobs[job_id]["status"] = JobStatus.FAILED
-            scrape_jobs[job_id]["error"] = "Scraper collected 0 reviews. The product may have no reviews or Flipkart blocked the request. Try again."
-            scrape_jobs[job_id]["completed_at"] = datetime.now(timezone.utc)
+            job.status = JobStatus.FAILED
+            job.error = "Scraper collected 0 reviews. The product may have no reviews or Flipkart blocked the request. Try again."
         else:
-            scrape_jobs[job_id]["status"] = JobStatus.COMPLETED
-            scrape_jobs[job_id]["product_id"] = product_id
-            scrape_jobs[job_id]["reviews_scraped"] = reviews_count
-            scrape_jobs[job_id]["progress"] = 100
-            scrape_jobs[job_id]["completed_at"] = datetime.now(timezone.utc)
-            scrape_jobs[job_id]["message"] = f"Successfully scraped {reviews_count} reviews"
+            job.status = JobStatus.COMPLETED
+            job.product_id = product_id
+            job.reviews_scraped = reviews_count
+            job.progress = 100
+            job.message = f"Successfully scraped {reviews_count} reviews"
+        
+        job.completed_at = datetime.now(timezone.utc)
+        db.commit()
         
     except Exception as e:
         error_text = str(e)
@@ -98,16 +111,29 @@ async def run_scrape_job(job_id: str, url: str, max_reviews: int):
                 "Flipkart took too long to respond. Please try again in a minute "
                 "or reduce the review count to 50."
             )
-        scrape_jobs[job_id]["status"] = JobStatus.FAILED
-        scrape_jobs[job_id]["error"] = error_text
-        scrape_jobs[job_id]["completed_at"] = datetime.now(timezone.utc)
+        
+        # Re-fetch job to update it
+        job = db.query(ScrapeJob).filter(ScrapeJob.job_id == job_id).first()
+        if job:
+            job.status = JobStatus.FAILED
+            job.error = error_text
+            job.completed_at = datetime.now(timezone.utc)
+            db.commit()
+    finally:
+        db.close()
 
 
 def update_job_progress(job_id: str, progress: int, reviews_count: int):
-    """Update job progress."""
-    if job_id in scrape_jobs:
-        scrape_jobs[job_id]["progress"] = progress
-        scrape_jobs[job_id]["reviews_scraped"] = reviews_count
+    """Update job progress in database."""
+    db = SessionLocal()
+    try:
+        job = db.query(ScrapeJob).filter(ScrapeJob.job_id == job_id).first()
+        if job:
+            job.progress = progress
+            job.reviews_scraped = reviews_count
+            db.commit()
+    finally:
+        db.close()
 
 
 @router.post("", response_model=ScrapeStatusResponse)
@@ -115,7 +141,8 @@ def update_job_progress(job_id: str, progress: int, reviews_count: int):
 async def start_scraping(
     request: Request,
     body: ScrapeRequest,
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
 ):
     """Start scraping a product from URL."""
     try:
@@ -123,50 +150,71 @@ async def start_scraping(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     
-    # Create job
+    # Create job in database
     job_id = str(uuid.uuid4())
-    scrape_jobs[job_id] = {
-        "job_id": job_id,
-        "status": JobStatus.PENDING,
-        "product_id": None,
-        "progress": 0,
-        "reviews_scraped": 0,
-        "message": f"Scraping {platform} product...",
-        "started_at": None,
-        "completed_at": None,
-        "error": None
-    }
+    job = ScrapeJob(
+        job_id=job_id,
+        status=JobStatus.PENDING,
+        message=f"Scraping {platform} product...",
+        progress=0,
+        reviews_scraped=0
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
     
-    # Cleanup old jobs to prevent memory leak
-    _cleanup_old_jobs()
+    # Cleanup old jobs to prevent database bloat
+    _cleanup_old_jobs(db)
 
     # Add background task
     background_tasks.add_task(run_scrape_job, job_id, body.url, body.max_reviews)
     
-    return ScrapeStatusResponse(**scrape_jobs[job_id])
+    return ScrapeStatusResponse(
+        job_id=job.job_id,
+        status=job.status,
+        product_id=job.product_id,
+        progress=job.progress,
+        reviews_scraped=job.reviews_scraped,
+        message=job.message,
+        started_at=job.started_at,
+        completed_at=job.completed_at,
+        error=job.error
+    )
 
 
 @router.get("/{job_id}/status", response_model=ScrapeStatusResponse)
-async def get_scrape_status(job_id: str):
+async def get_scrape_status(job_id: str, db: Session = Depends(get_db)):
     """Get the status of a scraping job."""
-    if job_id not in scrape_jobs:
+    job = db.query(ScrapeJob).filter(ScrapeJob.job_id == job_id).first()
+    if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     
-    return ScrapeStatusResponse(**scrape_jobs[job_id])
+    return ScrapeStatusResponse(
+        job_id=job.job_id,
+        status=job.status,
+        product_id=job.product_id,
+        progress=job.progress,
+        reviews_scraped=job.reviews_scraped,
+        message=job.message,
+        started_at=job.started_at,
+        completed_at=job.completed_at,
+        error=job.error
+    )
 
 
 @router.delete("/{job_id}")
-async def cancel_scrape(job_id: str):
+async def cancel_scrape(job_id: str, db: Session = Depends(get_db)):
     """Cancel a running scrape job."""
-    if job_id not in scrape_jobs:
+    job = db.query(ScrapeJob).filter(ScrapeJob.job_id == job_id).first()
+    if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     
-    job = scrape_jobs[job_id]
-    if job["status"] in [JobStatus.COMPLETED, JobStatus.FAILED]:
+    if job.status in [JobStatus.COMPLETED, JobStatus.FAILED]:
         raise HTTPException(status_code=400, detail="Job already finished")
     
-    job["status"] = JobStatus.CANCELLED
-    job["completed_at"] = datetime.now(timezone.utc)
-    job["message"] = "Job cancelled by user"
+    job.status = JobStatus.CANCELLED
+    job.completed_at = datetime.now(timezone.utc)
+    job.message = "Job cancelled by user"
+    db.commit()
     
     return {"message": "Job cancelled"}
