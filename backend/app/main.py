@@ -47,6 +47,29 @@ async def lifespan(app: FastAPI):
     init_db()
     logger.info("Database tables initialized")
     
+    # Cleanup stale jobs (any job in running/pending state after restart is dead)
+    from app.database import SessionLocal
+    from app.models.job import ScrapeJob
+    from app.schemas.scraping import JobStatus
+    from datetime import datetime, timezone
+    
+    db = SessionLocal()
+    try:
+        stale_jobs = db.query(ScrapeJob).filter(
+            ScrapeJob.status.in_([JobStatus.RUNNING, JobStatus.PENDING])
+        ).all()
+        if stale_jobs:
+            logger.info("Cleaning up %d stale scraping jobs", len(stale_jobs))
+            for job in stale_jobs:
+                job.status = JobStatus.FAILED
+                job.error = "Server restarted during analysis. Please try again."
+                job.completed_at = datetime.now(timezone.utc)
+            db.commit()
+    except Exception as e:
+        logger.error("Failed to cleanup stale jobs: %s", e)
+    finally:
+        db.close()
+    
     # Pre-load ML models (lazy loading on first use)
     logger.info("ML models will be loaded on first request")
     logger.info("Groq AI integration ready")
