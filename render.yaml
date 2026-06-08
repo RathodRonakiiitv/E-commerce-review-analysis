@@ -15,4 +15,6 @@ services:
         value: distilbert-base-uncased-finetuned-sst-2-english
       - key: CORS_ORIGINS
         value: "http://localhost:3000,http://localhost:3001,https://your-vercel-app.vercel.app"
+      - key: LIGHTWEIGHT_SCRAPER
+        value: "true"
     autoDeploy: false
