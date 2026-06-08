@@ -77,8 +77,7 @@ class FlipkartHTTPScraper:
                 from curl_cffi import requests as curl_requests
                 self._client = curl_requests.AsyncSession(
                     impersonate="chrome",
-                    timeout=30.0,
-                    allow_redirects=True,
+                    timeout=30.0
                 )
                 self._using_curl_cffi = True
                 logger.info("Using curl_cffi for Chrome TLS impersonation")
