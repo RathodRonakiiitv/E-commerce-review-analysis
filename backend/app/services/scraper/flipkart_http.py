@@ -69,21 +69,40 @@ class FlipkartHTTPScraper:
             "Cache-Control": "max-age=0",
         }
 
-    async def _get_client(self) -> httpx.AsyncClient:
-        """Get or create the HTTP client with cookie persistence."""
-        if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient(
-                timeout=httpx.Timeout(30.0, connect=15.0),
-                follow_redirects=True,
-                http2=False,  # Flipkart sometimes has issues with HTTP/2
-                limits=httpx.Limits(max_connections=5),
-            )
+    async def _get_client(self):
+        """Lazy init the HTTP client."""
+        if self._client is None or getattr(self._client, "is_closed", False):
+            # Try to use curl_cffi for advanced TLS impersonation (bypasses most bot checks)
+            try:
+                from curl_cffi import requests as curl_requests
+                self._client = curl_requests.AsyncSession(
+                    impersonate="chrome",
+                    timeout=30.0,
+                    allow_redirects=True,
+                )
+                self._using_curl_cffi = True
+                logger.info("Using curl_cffi for Chrome TLS impersonation")
+            except ImportError:
+                # Fallback to standard httpx
+                self._client = httpx.AsyncClient(
+                    timeout=httpx.Timeout(30.0, connect=15.0),
+                    follow_redirects=True,
+                    http2=False,
+                    limits=httpx.Limits(max_connections=5),
+                )
+                self._using_curl_cffi = False
+                logger.warning("curl_cffi not installed, falling back to httpx")
         return self._client
 
     async def _close_client(self):
         """Close the HTTP client."""
-        if self._client and not self._client.is_closed:
-            await self._client.aclose()
+        if self._client:
+            if getattr(self, "_using_curl_cffi", False):
+                # curl_cffi AsyncSession
+                self._client.close()
+            elif not self._client.is_closed:
+                # httpx AsyncClient
+                await self._client.aclose()
         self._client = None
 
     # ─────────────────── URL helpers ───────────────────────────────
