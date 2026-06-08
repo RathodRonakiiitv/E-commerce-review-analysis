@@ -76,11 +76,11 @@ class FlipkartHTTPScraper:
             try:
                 from curl_cffi import requests as curl_requests
                 self._client = curl_requests.AsyncSession(
-                    impersonate="chrome",
+                    impersonate="chrome110",
                     timeout=30.0
                 )
                 self._using_curl_cffi = True
-                logger.info("Using curl_cffi for Chrome TLS impersonation")
+                logger.info("Using curl_cffi for Chrome110 TLS impersonation")
             except ImportError:
                 # Fallback to standard httpx
                 self._client = httpx.AsyncClient(
