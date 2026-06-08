@@ -89,7 +89,7 @@ function CompareProducts() {
         return Array.from(allAspects).map(aspect => {
             const item = { aspect };
             comparisonData.products.forEach((p, i) => {
-                item[`Product ${i + 1}`] = Math.round(p.aspects[aspect] || 0);
+                item[`Product ${i + 1}`] = Math.round((p.aspects[aspect] || 0) * 100);
             });
             return item;
         });
