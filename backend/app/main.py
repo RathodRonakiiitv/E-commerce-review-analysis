@@ -39,6 +39,22 @@ limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
 settings = get_settings()
 
 
+async def _keep_alive_loop(target_url: str, interval_minutes: int):
+    """Background task to self-ping the application endpoint."""
+    import httpx
+    logger.info("Starting Keep-Alive self-ping background task (Target: %s, Interval: %d min)", target_url, interval_minutes)
+    # Delay initial ping by 30 seconds to allow full startup
+    await asyncio.sleep(30)
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        while True:
+            try:
+                response = await client.get(target_url)
+                logger.info("Keep-Alive ping to %s returned status %d", target_url, response.status_code)
+            except Exception as exc:
+                logger.warning("Keep-Alive ping to %s failed: %s", target_url, exc)
+            await asyncio.sleep(interval_minutes * 60)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events."""
@@ -74,9 +90,25 @@ async def lifespan(app: FastAPI):
     logger.info("ML models will be loaded on first request")
     logger.info("Groq AI integration ready")
     
+    # Start Keep-Alive self-ping task if configured
+    keep_alive_task = None
+    target_url = settings.target_keep_alive_url
+    if settings.keep_alive_enabled and target_url:
+        keep_alive_task = asyncio.create_task(
+            _keep_alive_loop(target_url, settings.keep_alive_interval_minutes)
+        )
+    else:
+        logger.info("Keep-Alive self-ping task disabled or target URL not set.")
+    
     yield
     
     # Shutdown
+    if keep_alive_task:
+        keep_alive_task.cancel()
+        try:
+            await keep_alive_task
+        except asyncio.CancelledError:
+            pass
     logger.info("Shutting down API...")
 
 

@@ -88,3 +88,49 @@ If your current Render PostgreSQL instance is expiring, migrate data before shut
     ```
 4.  In Render -> your backend service -> **Environment**, update `DATABASE_URL` to the new URL.
 5.  Trigger a deploy and verify the API health endpoint and product analysis flow.
+
+---
+
+## Preventing Render Free Tier Sleep (Keep-Alive Setup)
+
+Render's free web services automatically spin down (go to sleep) after **15 minutes of inactivity**. When a new user hits the website after it sleeps, it takes 30-60 seconds ("cold start") to respond.
+
+To keep the service awake continuously, this project includes two auto-ping mechanisms:
+
+### 1. Built-in FastAPI Self-Pinger
+- The backend contains a background loop (`_keep_alive_loop`) that automatically pings `/api/health` every **10 minutes**.
+- **Render Environment Variables**:
+  - `KEEP_ALIVE_ENABLED`: Set to `true` (default).
+  - `KEEP_ALIVE_URL`: Set to `https://<your-render-app>.onrender.com/api/health` (or leave empty if Render sets `RENDER_EXTERNAL_URL`).
+  - `KEEP_ALIVE_INTERVAL_MINUTES`: `10`
+
+### 2. GitHub Actions Scheduled Workflow
+- A GitHub workflow (`.github/workflows/keep_alive.yml`) runs an external cron job every **10 minutes** (`*/10 * * * *`).
+- Even if the Render service ever shuts down, the GitHub Action sends an HTTP request to wake it up and keep it alive.
+- **Customizing URL**: Add a Repository Secret in GitHub:
+  - Name: `RENDER_BACKEND_URL`
+  - Value: `https://<your-render-app>.onrender.com/api/health`
+
+### 3. Optional Free External Pingers
+You can also register your `/api/health` endpoint on free ping services:
+- [cron-job.org](https://cron-job.org) (Create job to GET your URL every 10 minutes)
+- [UptimeRobot](https://uptimerobot.com) (Create HTTP monitor for your URL every 5 minutes)
+
+---
+
+## What Docker Does After Deployment on Render
+
+When you deploy this project to Render using Docker:
+
+1. **Build Phase (Container Image Creation)**:
+   - Render reads `backend/Dockerfile` and builds a lightweight Linux container image (`python:3.12-slim`).
+   - It installs C/C++ build tools (`gcc`, `g++`) and system libraries required by Python ML/scraping packages.
+   - It installs Python packages listed in `requirements.txt` (FastAPI, PyTorch, Transformers, BeautifulSoup4, NLTK, etc.).
+   - It pre-downloads NLTK VADER lexicon models into `/usr/share/nltk_data`.
+
+2. **Runtime Phase (Container Execution)**:
+   - Render launches the isolated container running Uvicorn: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
+   - The container isolates the app from the host OS so all dependencies (PyTorch, NLTK, system libs) run in a uniform environment regardless of host OS updates.
+   - Render's reverse proxy routes incoming web traffic (`https://review-analyzer-backend-yy1s.onrender.com`) directly to port `$PORT` inside the running Docker container.
+   - The container runs the FastAPI event loop, processing review scraping requests, sentiment analysis, AI summaries, and the Keep-Alive background pinger loop.
+

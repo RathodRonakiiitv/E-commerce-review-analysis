@@ -17,4 +17,10 @@ services:
         value: "http://localhost:3000,http://localhost:3001,https://your-vercel-app.vercel.app"
       - key: LIGHTWEIGHT_SCRAPER
         value: "true"
+      - key: KEEP_ALIVE_ENABLED
+        value: "true"
+      - key: KEEP_ALIVE_INTERVAL_MINUTES
+        value: "10"
+      - key: KEEP_ALIVE_URL
+        value: "https://review-analyzer-backend-yy1s.onrender.com/api/health"
     autoDeploy: false

@@ -35,6 +35,19 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     groq_model: str = "llama-3.3-70b-versatile"
     
+    # Keep-Alive (Prevent Render Free Tier Sleeping)
+    keep_alive_enabled: bool = True
+    keep_alive_url: str = ""
+    keep_alive_interval_minutes: int = 10
+
+    @property
+    def target_keep_alive_url(self) -> str:
+        """Resolve target URL for keep-alive ping."""
+        url = self.keep_alive_url or os.getenv("RENDER_EXTERNAL_URL", "")
+        if url and not url.endswith("/api/health"):
+            url = url.rstrip("/") + "/api/health"
+        return url
+    
     @property
     def cors_origins_list(self) -> List[str]:
         """Parse CORS origins from comma-separated string."""

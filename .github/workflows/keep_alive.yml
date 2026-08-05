@@ -1,0 +1,30 @@
+name: Render Backend Keep-Alive Ping
+
+on:
+  schedule:
+    # Run every 10 minutes to prevent Render free tier from going to sleep (15 min limit)
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: 'Target backend health check URL to ping (optional)'
+        required: false
+        default: ''
+
+jobs:
+  ping:
+    name: Ping Render Web Service
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Backend Endpoint
+        run: |
+          TARGET_URL="${{ inputs.target_url || secrets.RENDER_BACKEND_URL || 'https://review-analyzer-backend-yy1s.onrender.com/api/health' }}"
+          echo "Sending keep-alive ping to: $TARGET_URL"
+          RESPONSE_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$TARGET_URL")
+          echo "Received HTTP status code: $RESPONSE_CODE"
+          if [ "$RESPONSE_CODE" -ge 200 ] && [ "$RESPONSE_CODE" -lt 400 ]; then
+            echo "Successfully pinged $TARGET_URL - Render service is alive!"
+          else
+            echo "Warning: Ping returned HTTP status $RESPONSE_CODE"
+            exit 1
+          fi
