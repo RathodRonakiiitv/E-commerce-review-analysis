@@ -52,7 +52,7 @@ function AIInsights({ analysis }) {
                 </div>
                 <div>
                     <h2 className="text-2xl font-bold text-white">AI Assistant Report</h2>
-                    <p className="text-white/50 text-sm">Powered by Groq Llama-3 70B</p>
+                    <p className="text-white/50 text-sm">Powered by Groq AI</p>
                 </div>
             </div>
 

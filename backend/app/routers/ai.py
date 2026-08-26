@@ -14,6 +14,9 @@ router = APIRouter(prefix="/ai")
 
 class AIInsightsResponse(BaseModel):
     summary: Optional[str] = None
+    pros: Optional[List[str]] = None
+    cons: Optional[List[str]] = None
+    recommendation: Optional[str] = None
     model: Optional[str] = None
     reviews_analyzed: Optional[int] = None
     error: Optional[str] = None

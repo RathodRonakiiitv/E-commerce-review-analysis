@@ -12,12 +12,10 @@ logger = logging.getLogger(__name__)
 
 # Ordered fallback list: try the configured model first, then these alternatives
 FALLBACK_MODELS = [
-    "llama-3.3-70b-versatile",
-    "llama-3.1-70b-versatile",
-    "llama-3.1-8b-instant",
-    "llama3-70b-8192",
-    "llama3-8b-8192",
-    "gemma2-9b-it",
+    "qwen/qwen3.8-27b",
+    "qwen/qwen3.6-27b",
+    "openai/gpt-oss-20b",
+    "openai/gpt-oss-120b",
 ]
 
 
@@ -51,7 +49,7 @@ class GroqService:
         def _find_section(pattern: str, text: str) -> Optional[str]:
             """Return text after a header matching *pattern* up to the next header."""
             header_re = re.compile(
-                r'(?:^|\n)\s*(?:\d+\.\s*)?(?:\*\*|#{1,3}\s*)' + pattern + r'(?:\*\*)?[:\s]*\n',
+                r'(?:^|\n)\s*(?:\d+\.\s*)?(?:\*\*|#{1,3}\s*)(?:\d+\.\s*)?' + pattern + r'(?:\*\*)?[:\s]*\n',
                 re.IGNORECASE,
             )
             m = header_re.search(text)
@@ -193,10 +191,10 @@ Provide a helpful, balanced analysis."""
                                 "reviews_analyzed": len(review_sample),
                                 "error": None
                             }
-                        elif response.status_code == 404:
-                            # Model not found — try the next fallback model
-                            logger.warning("Groq model '%s' not found, trying next fallback...", current_model)
-                            last_error = f"Model '{current_model}' not found"
+                        elif response.status_code in (404, 400):
+                            # Model not found or decommissioned — try the next fallback model
+                            logger.warning("Groq model '%s' unavailable (HTTP %d), trying next fallback...", current_model, response.status_code)
+                            last_error = f"Model '{current_model}' unavailable (HTTP {response.status_code})"
                             break  # break inner retry loop, continue to next model
                         elif response.status_code == 429:
                             # Rate limited — wait and retry
