@@ -10,6 +10,17 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+# Ordered fallback list: try the configured model first, then these alternatives
+FALLBACK_MODELS = [
+    "llama-3.3-70b-versatile",
+    "llama-3.1-70b-versatile",
+    "llama-3.1-8b-instant",
+    "llama3-70b-8192",
+    "llama3-8b-8192",
+    "gemma2-9b-it",
+]
+
+
 class GroqService:
     """Service for Groq API integration."""
     
@@ -22,6 +33,14 @@ class GroqService:
             logger.info(f"Groq API configured with key: {self.api_key[:8]}... model: {self.model}")
         else:
             logger.warning("Groq API key not found! AI features will be disabled.")
+    
+    def _get_models_to_try(self) -> List[str]:
+        """Return an ordered list of models to try, starting with the configured model."""
+        models = [self.model]
+        for m in FALLBACK_MODELS:
+            if m not in models:
+                models.append(m)
+        return models
     
     def _parse_summary_sections(self, text: str) -> Dict:
         """Parse the AI markdown response into structured sections."""
@@ -104,7 +123,8 @@ class GroqService:
             return {
                 "error": "Groq API key not configured",
                 "summary": None,
-                "suggestions": []
+                "model": self.model,
+                "reviews_analyzed": 0,
             }
         
         # Prepare review text (limit to avoid token limits)
@@ -128,86 +148,99 @@ Reviews:
 Provide a helpful, balanced analysis."""
 
         max_retries = 2
-        last_error = None
+        models_to_try = self._get_models_to_try()
 
-        for attempt in range(1, max_retries + 2):
-            try:
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    response = await client.post(
-                        self.base_url,
-                        headers={
-                            "Authorization": f"Bearer {self.api_key}",
-                            "Content-Type": "application/json"
-                        },
-                        json={
-                            "model": self.model,
-                            "messages": [
-                                {
-                                    "role": "system",
-                                    "content": "You are an expert product analyst. Provide concise, actionable insights from customer reviews. Be balanced and helpful."
-                                },
-                                {
-                                    "role": "user",
-                                    "content": prompt
-                                }
-                            ],
-                            "temperature": 0.7,
-                            "max_tokens": 1000
-                        }
-                    )
+        for current_model in models_to_try:
+            last_error = None
 
-                    if response.status_code == 200:
-                        data = response.json()
-                        ai_response = data["choices"][0]["message"]["content"]
-                        parsed = self._parse_summary_sections(ai_response)
+            for attempt in range(1, max_retries + 2):
+                try:
+                    async with httpx.AsyncClient(timeout=30.0) as client:
+                        response = await client.post(
+                            self.base_url,
+                            headers={
+                                "Authorization": f"Bearer {self.api_key}",
+                                "Content-Type": "application/json"
+                            },
+                            json={
+                                "model": current_model,
+                                "messages": [
+                                    {
+                                        "role": "system",
+                                        "content": "You are an expert product analyst. Provide concise, actionable insights from customer reviews. Be balanced and helpful."
+                                    },
+                                    {
+                                        "role": "user",
+                                        "content": prompt
+                                    }
+                                ],
+                                "temperature": 0.7,
+                                "max_tokens": 1000
+                            }
+                        )
 
-                        return {
-                            "summary": parsed.get("summary", ai_response),
-                            "pros": parsed.get("pros", []),
-                            "cons": parsed.get("cons", []),
-                            "recommendation": parsed.get("recommendation", ""),
-                            "model": self.model,
-                            "reviews_analyzed": len(review_sample),
-                            "error": None
-                        }
-                    elif response.status_code == 429:
-                        # Rate limited — wait and retry
-                        wait = 2.0 * attempt
-                        logger.warning("Groq rate limited (429), retrying in %.1fs ...", wait)
-                        last_error = f"Rate limited (attempt {attempt})"
-                        await asyncio.sleep(wait)
-                        continue
-                    elif response.status_code >= 500:
-                        # Server error — retry
-                        wait = 3.0 * attempt
-                        logger.warning("Groq server error %d, retrying in %.1fs ...", response.status_code, wait)
-                        last_error = f"Server error {response.status_code}"
-                        await asyncio.sleep(wait)
-                        continue
-                    else:
-                        error_detail = response.text
-                        logger.error("Groq API error %d: %s", response.status_code, error_detail)
-                        return {
-                            "error": f"Groq API error: {response.status_code} - {error_detail[:200]}",
-                            "summary": None,
-                            "details": error_detail
-                        }
+                        if response.status_code == 200:
+                            data = response.json()
+                            ai_response = data["choices"][0]["message"]["content"]
+                            parsed = self._parse_summary_sections(ai_response)
 
-            except (httpx.TimeoutException, httpx.ConnectError) as e:
-                wait = 3.0 * attempt
-                logger.warning("Groq request failed (%s), retrying in %.1fs ...", e, wait)
-                last_error = str(e)
-                await asyncio.sleep(wait)
-                continue
-            except Exception as e:
-                return {
-                    "error": str(e),
-                    "summary": None
-                }
+                            return {
+                                "summary": parsed.get("summary", ai_response),
+                                "pros": parsed.get("pros", []),
+                                "cons": parsed.get("cons", []),
+                                "recommendation": parsed.get("recommendation", ""),
+                                "model": current_model,
+                                "reviews_analyzed": len(review_sample),
+                                "error": None
+                            }
+                        elif response.status_code == 404:
+                            # Model not found — try the next fallback model
+                            logger.warning("Groq model '%s' not found, trying next fallback...", current_model)
+                            last_error = f"Model '{current_model}' not found"
+                            break  # break inner retry loop, continue to next model
+                        elif response.status_code == 429:
+                            # Rate limited — wait and retry
+                            wait = 2.0 * attempt
+                            logger.warning("Groq rate limited (429), retrying in %.1fs ...", wait)
+                            last_error = f"Rate limited (attempt {attempt})"
+                            await asyncio.sleep(wait)
+                            continue
+                        elif response.status_code >= 500:
+                            # Server error — retry
+                            wait = 3.0 * attempt
+                            logger.warning("Groq server error %d, retrying in %.1fs ...", response.status_code, wait)
+                            last_error = f"Server error {response.status_code}"
+                            await asyncio.sleep(wait)
+                            continue
+                        else:
+                            error_detail = response.text
+                            logger.error("Groq API error %d: %s", response.status_code, error_detail)
+                            return {
+                                "error": f"Groq API error: {response.status_code} - {error_detail[:200]}",
+                                "summary": None,
+                                "model": current_model,
+                                "reviews_analyzed": len(review_sample),
+                            }
+
+                except (httpx.TimeoutException, httpx.ConnectError) as e:
+                    wait = 3.0 * attempt
+                    logger.warning("Groq request failed (%s), retrying in %.1fs ...", e, wait)
+                    last_error = str(e)
+                    await asyncio.sleep(wait)
+                    continue
+                except Exception as e:
+                    return {
+                        "error": str(e),
+                        "summary": None,
+                        "model": current_model,
+                        "reviews_analyzed": len(review_sample),
+                    }
 
         return {
-            "error": f"Groq API failed after {max_retries + 1} attempts: {last_error}",
-            "summary": None
+            "error": f"Groq API failed after trying all models: {last_error}",
+            "summary": None,
+            "model": self.model,
+            "reviews_analyzed": len(review_sample),
         }
     
     async def generate_aspect_deep_dive(self, aspect: str, reviews: List[Dict], product_name: str) -> Dict:

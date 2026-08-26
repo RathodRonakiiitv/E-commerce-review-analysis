@@ -13,10 +13,10 @@ router = APIRouter(prefix="/ai")
 
 
 class AIInsightsResponse(BaseModel):
-    summary: Optional[str]
-    model: Optional[str]
-    reviews_analyzed: Optional[int]
-    error: Optional[str]
+    summary: Optional[str] = None
+    model: Optional[str] = None
+    reviews_analyzed: Optional[int] = None
+    error: Optional[str] = None
 
 
 class AspectDeepDiveRequest(BaseModel):
